@@ -380,6 +380,8 @@
       "diff": "Diff",
       "source": "Source"
     },
+    "copyContent": "Copy document content",
+    "copiedContent": "Document content copied to clipboard",
     "sourceDiffUnavailable": "Source content is unavailable right now",
     "sourceDiff": {
       "noChanges": "No changes — the source matches the central library",

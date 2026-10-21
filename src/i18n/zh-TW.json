@@ -387,6 +387,8 @@
       "diff": "差異",
       "source": "來源"
     },
+    "copyContent": "複製文件內容",
+    "copiedContent": "已複製文件內容至剪貼簿",
     "sourceDiffUnavailable": "暫時無法讀取來源版本內容",
     "sourceDiff": {
       "noChanges": "無差異 —— 來源與中央倉庫內容一致",

@@ -380,6 +380,8 @@
       "diff": "차이",
       "source": "출처"
     },
+    "copyContent": "문서 내용 복사",
+    "copiedContent": "문서 내용이 클립보드에 복사되었습니다",
     "sourceDiffUnavailable": "지금은 출처 내용을 불러오지 못합니다",
     "sourceDiff": {
       "noChanges": "변경 없음. 출처와 중앙 라이브러리가 같습니다",

@@ -353,6 +353,8 @@
       "local": "Local",
       "source": "Origen"
     },
+    "copyContent": "Copiar contenido del documento",
+    "copiedContent": "Contenido del documento copiado al portapapeles",
     "dragToReorder": "Arrastrar para reordenar",
     "enable": "Habilitar",
     "enableForPreset": "Habilitar para el preset actual",

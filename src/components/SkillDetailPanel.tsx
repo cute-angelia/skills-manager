@@ -7,8 +7,12 @@ import {
   HardDrive,
   Globe,
   Pencil,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { writeText as clipboardWriteText } from "@tauri-apps/plugin-clipboard-manager";
 import { cn } from "../utils";
 import { useApp } from "../context/AppContext";
 import { EditSkillDialog } from "./EditSkillDialog";
@@ -107,6 +111,8 @@ function SkillDetailPanelContent({
   const [loading, setLoading] = useState(true);
   const [isMetadataExpanded, setIsMetadataExpanded] = useState(false);
   const [contentTab, setContentTab] = useState<"local" | "diff" | "source">("local");
+  const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localRequestIdRef = useRef(0);
   const sourceRequestIdRef = useRef(0);
   const diffRequestedRef = useRef(false);
@@ -216,6 +222,41 @@ function SkillDetailPanelContent({
   const activeSourceDiff = sourceDiff?.skill_id === skill.id ? sourceDiff : null;
   const sourceDiffLoading =
     contentTab === "diff" && supportsSourceDiff && !activeSourceDiff && !sourceDiffFailed;
+  const textToCopy =
+    (contentTab === "source" ? activeSourceDoc?.content : activeDoc?.content) ?? activeDoc?.content;
+  const hasContentToCopy = Boolean(textToCopy);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyContent = async () => {
+    if (!textToCopy) return;
+
+    try {
+      try {
+        await clipboardWriteText(textToCopy);
+      } catch (err) {
+        console.error("Clipboard write failed, falling back to navigator", err);
+        await navigator.clipboard.writeText(textToCopy);
+      }
+      setCopied(true);
+      toast.success(t("mySkills.copiedContent"));
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch (err) {
+      console.error("Failed to copy content", err);
+      toast.error(t("common.error"));
+    }
+  };
   const toggleItems: AgentToggleItem[] = (toolToggles ?? []).map((toggle) => ({
     key: toggle.tool,
     displayName: toggle.display_name,
@@ -322,6 +363,20 @@ function SkillDetailPanelContent({
               title={t("editSkill.editButton")}
             >
               <Pencil className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyContent}
+              disabled={!hasContentToCopy}
+              className="shrink-0 rounded-md p-1.5 text-muted hover:text-accent hover:bg-surface-hover transition-colors outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+              title={t("mySkills.copyContent")}
+              aria-label={t("mySkills.copyContent")}
+            >
+              {copied ? (
+                <Check className="h-4 w-4 text-emerald-500" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
             </button>
           </div>
         }

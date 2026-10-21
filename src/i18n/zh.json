@@ -380,6 +380,8 @@
       "diff": "差异",
       "source": "来源"
     },
+    "copyContent": "复制文档内容",
+    "copiedContent": "已复制文档内容到剪贴板",
     "sourceDiffUnavailable": "暂时无法读取来源版本内容",
     "sourceDiff": {
       "noChanges": "无差异 —— 来源与中心库内容一致",
