@@ -58,6 +58,7 @@ import { cn, compactHomePath } from "../utils";
 import { useApp } from "../context/AppContext";
 import { useThemeContext } from "../context/ThemeContext";
 import { AgentIcon } from "../components/AgentIcon";
+import { EditAgentPathDialog } from "../components/EditAgentPathDialog";
 import { ToggleSwitch } from "../components/ToggleSwitch";
 import * as api from "../lib/tauri";
 import { applyTextSize } from "../lib/textScale";
@@ -185,6 +186,7 @@ export function Settings() {
   const [autoUpdateApply, setAutoUpdateApply] = useState("off");
   const [autoUpdateLastRun, setAutoUpdateLastRun] = useState<string | null>(null);
   // Agent path editing
+  const [dialogAgentKey, setDialogAgentKey] = useState<string | null>(null);
   const [editingPathKey, setEditingPathKey] = useState<string | null>(null);
   const [editingPathValue, setEditingPathValue] = useState("");
   // Project path editing (custom agents only)
@@ -857,6 +859,14 @@ export function Settings() {
             >
               {agent.display_name}
             </h3>
+            <button
+              type="button"
+              onClick={() => setDialogAgentKey(agent.key)}
+              className="shrink-0 p-1 text-muted hover:text-accent rounded-md transition-colors outline-none"
+              title={t("settings.editPath")}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
             {/* Enabled/disabled is carried by the switch; only "not installed" adds info. */}
             {!agent.installed && (
               <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-muted">
@@ -1880,6 +1890,14 @@ export function Settings() {
           </div>
         </section>
       </div>
+
+      <EditAgentPathDialog
+        open={Boolean(dialogAgentKey)}
+        agentKey={dialogAgentKey}
+        initialTool={tools.find((t) => t.key === dialogAgentKey)}
+        onClose={() => setDialogAgentKey(null)}
+        onSaved={refreshTools}
+      />
     </div>
   );
 }

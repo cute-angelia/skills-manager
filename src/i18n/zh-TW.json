@@ -1,4 +1,26 @@
 {
+  "createSkill": {
+    "title": "新增 Skill",
+    "subtitle": "直接編寫技能並儲存至技能庫，再加入 Preset 或部署給 Agent。",
+    "name": "名稱 / 目錄識別碼",
+    "nameHint": "1–64 個小寫英文字母、數字或連字號，首尾須為字母或數字；不能使用 Windows 保留名稱（如 con、nul、com1）。",
+    "description": "描述與觸發條件",
+    "descriptionPlaceholder": "例如：當使用者要求整理會議紀錄、提煉結論和待辦時使用。",
+    "body": "Markdown 內文",
+    "edit": "編輯",
+    "preview": "預覽",
+    "bodyHint": "僅填寫執行說明，名稱和描述會自動產生 YAML 標頭。建立後不會自動部署。",
+    "template": "# 執行步驟\n\n1. 閱讀使用者提供的材料，確認目標。\n2. 按要求完成任務，不編造缺少的資訊。\n3. 輸出清楚的結果，並標註需要確認的內容。\n\n## 輸出要求\n\n說明結果格式、注意事項和限制。",
+    "create": "建立 Skill",
+    "creating": "建立中…",
+    "invalidName": "名稱須為 1–64 個小寫英文字母、數字或連字號，首尾為字母或數字，且不能是 Windows 保留名稱。",
+    "requiredDescription": "請填寫描述與觸發條件。",
+    "requiredBody": "請填寫技能內文。",
+    "frontmatter": "內文不應以 --- 開頭。名稱和描述由表單自動產生，無需填寫 YAML 標頭。",
+    "exists": "此名稱已被技能或目錄使用，請更換名稱。既有內容未被修改。",
+    "success": "Skill 已建立並加入技能庫，尚未部署至 Agent。",
+    "refreshFailed": "Skill 已建立，但清單更新失敗，請手動重新整理。"
+  },
   "app": {
     "name": "Skills Manager"
   },
@@ -583,6 +605,7 @@
     "enableAgent": "啟用此 Agent",
     "disableAgent": "停用此 Agent",
     "editPath": "編輯路徑",
+    "editAgentConfig": "編輯 Agent 設定",
     "resetPath": "恢復預設",
     "dragToReorder": "拖曳以調整順序",
     "pathOverridden": "自訂路徑",

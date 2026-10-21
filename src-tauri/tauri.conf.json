@@ -31,9 +31,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERBRUYwMTBDOEQ3MDdEODAKUldTQWZYQ05EQUh2Mm0wNDZtNm5VYWJpbjRaZVJQRUhrQ2tkOXc3MHBWZ2VaREo0OVd3WEU3d0oK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4QkZEMUJDQ0M2MzQ2QzUKUldURlJtUE12TkcvMklWbWhSanhjaHhLNHZhbW9tdmc2L0pyZ3Fyc05WK1A2M2U0eFVtWWFuSjUK",
       "endpoints": [
-        "https://github.com/xingkongliang/skills-manager/releases/latest/download/latest.json"
+        "https://github.com/cute-angelia/skills-manager/releases/latest/download/latest.json"
       ]
     }
   },

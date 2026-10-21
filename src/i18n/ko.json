@@ -1,4 +1,26 @@
 {
+  "createSkill": {
+    "title": "새 Skill",
+    "subtitle": "라이브러리에 스킬을 작성한 뒤 Preset에 추가하거나 Agent에 배포하세요.",
+    "name": "이름 / 디렉터리 식별자",
+    "nameHint": "소문자 영문, 숫자, 하이픈 1–64자. 처음과 끝은 문자 또는 숫자여야 합니다. Windows 예약 이름(con, nul, com1 등)은 사용할 수 없습니다.",
+    "description": "설명 및 실행 조건",
+    "descriptionPlaceholder": "예: 회의록을 요약하고 결정 사항과 할 일을 정리할 때 사용합니다.",
+    "body": "Markdown 본문",
+    "edit": "편집",
+    "preview": "미리보기",
+    "bodyHint": "실행 지침만 작성하세요. YAML 메타데이터는 자동 생성되며 스킬은 자동 배포되지 않습니다.",
+    "template": "# 실행 단계\n\n1. 제공된 자료를 읽고 목표를 확인합니다.\n2. 없는 정보를 지어내지 않고 작업을 수행합니다.\n3. 결과를 명확히 제시하고 확인이 필요한 내용을 표시합니다.\n\n## 출력 요구 사항\n\n결과 형식, 주의 사항, 제한을 설명합니다.",
+    "create": "Skill 만들기",
+    "creating": "생성 중…",
+    "invalidName": "소문자 영문, 숫자, 하이픈 1–64자를 사용하고 처음과 끝은 문자 또는 숫자로 지정하세요. Windows 예약 이름은 사용할 수 없습니다.",
+    "requiredDescription": "설명과 실행 조건을 입력하세요.",
+    "requiredBody": "스킬 지침을 입력하세요.",
+    "frontmatter": "본문을 ---로 시작하지 마세요. 이름과 설명 메타데이터는 자동 생성됩니다.",
+    "exists": "같은 이름의 스킬 또는 디렉터리가 있습니다. 다른 이름을 사용하세요. 기존 내용은 변경되지 않았습니다.",
+    "success": "라이브러리에 Skill을 만들었습니다. 아직 Agent에 배포되지 않았습니다.",
+    "refreshFailed": "Skill은 생성되었지만 목록을 새로 고치지 못했습니다. 수동으로 새로 고치세요."
+  },
   "app": {
     "name": "Skills Manager"
   },
@@ -583,6 +605,7 @@
     "enableAgent": "이 에이전트 사용",
     "disableAgent": "이 에이전트 사용 안 함",
     "editPath": "경로 수정",
+    "editAgentConfig": "에이전트 설정 수정",
     "resetPath": "기본값으로 되돌리기",
     "dragToReorder": "드래그해서 순서 바꾸기",
     "pathOverridden": "직접 지정한 경로",

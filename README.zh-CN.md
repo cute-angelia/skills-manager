@@ -99,7 +99,7 @@ brew install --cask skills-manager
 
 ## 快速上手
 
-1. 从本地目录、Git 仓库、压缩包或市场安装 Skills。
+1. 从本地目录、Git 仓库、压缩包或市场安装 Skills。也可以打开 **技能库 → 新建 Skill**，填写名称、描述与 Markdown 正文，预览后创建；YAML 头部自动生成，创建不会自动部署到 Agent。
 2. 从侧边栏进入 **全局工作区**，选择一个 Agent（如 Claude Code）。
 3. 点击 **Preset** 标签为该 Agent 一键激活对应 Skills，或点 **+ 添加 Skills** 从技能库挑选并即时切换目标 Agent。激活的 Preset 显示 ✓，部分安装显示计数角标。
 4. 如需管理项目本地 Skills，打开 **项目工作区**，同样使用 Preset 标签，或通过 **+ 添加 Skills** 弹层用多 Agent 目标选择器挑选。

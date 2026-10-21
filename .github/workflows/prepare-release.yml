@@ -15,11 +15,12 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -42,12 +43,33 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Prepare release files
-        run: npm run release:prepare -- ${{ inputs.release_type }}
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TYPE" in
+            patch|minor|major) ;;
+            *) echo "Invalid release type" >&2; exit 1 ;;
+          esac
+          npm run release:prepare -- "$RELEASE_TYPE"
 
       - name: Commit and tag
+        id: release
         run: |
+          set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
           git add CHANGELOG.md CHANGELOG-zh.md package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock assets/star-history.svg
           git commit -m "chore: bump version to ${VERSION}"
           git tag -a "v${VERSION}" -m "v${VERSION}"
           git push --follow-tags origin HEAD:main
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      # GITHUB_TOKEN pushes do not trigger another push workflow. Dispatch on
+      # the new tag explicitly, preserving tag context in every release job.
+      - name: Trigger release build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"

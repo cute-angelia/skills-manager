@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, Pencil } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../utils";
 import { AgentIcon } from "./AgentIcon";
+import { EditAgentPathDialog } from "./EditAgentPathDialog";
 
 export interface AgentToggleItem {
   key: string;
@@ -28,6 +29,7 @@ export function AgentToggleSection({
 }: Props) {
   const { t } = useTranslation();
   const [showUnavailable, setShowUnavailable] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<{ key: string; displayName: string } | null>(null);
 
   const availableItems = items.filter((item) => item.isAvailable);
   const unavailableItems = items.filter((item) => !item.isAvailable);
@@ -56,6 +58,9 @@ export function AgentToggleSection({
                 item={item}
                 loading={togglingKey === item.key}
                 onToggle={onToggle}
+                onEditAgent={(item) =>
+                  setEditingAgent({ key: item.key, displayName: item.displayName })
+                }
               />
             ))}
           </div>
@@ -79,6 +84,9 @@ export function AgentToggleSection({
                     item={item}
                     loading={togglingKey === item.key}
                     onToggle={onToggle}
+                    onEditAgent={(item) =>
+                      setEditingAgent({ key: item.key, displayName: item.displayName })
+                    }
                   />
                 ))}
               </div>
@@ -86,6 +94,13 @@ export function AgentToggleSection({
           </div>
         )}
       </div>
+
+      <EditAgentPathDialog
+        open={Boolean(editingAgent)}
+        agentKey={editingAgent?.key ?? null}
+        agentDisplayName={editingAgent?.displayName}
+        onClose={() => setEditingAgent(null)}
+      />
     </div>
   );
 }
@@ -94,47 +109,65 @@ function AgentToggle({
   item,
   loading,
   onToggle,
+  onEditAgent,
 }: {
   item: AgentToggleItem;
   loading: boolean;
   onToggle: (key: string, enabled: boolean) => void;
+  onEditAgent: (item: AgentToggleItem) => void;
 }) {
   const disabled = Boolean(item.disabled || loading);
   return (
-    <button
-      type="button"
-      onClick={() => onToggle(item.key, !item.enabled)}
-      disabled={disabled}
+    <div
       className={cn(
-        "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-[12px] transition-colors",
+        "group flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] transition-colors",
         item.enabled ? "border-border bg-surface" : "border-border-subtle bg-bg-secondary",
         !disabled && "hover:bg-surface-hover",
         disabled && "opacity-55"
       )}
       title={item.badgeLabel ?? undefined}
     >
-      <span className="shrink-0">
-        {loading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
-        ) : item.enabled ? (
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-        ) : (
-          <Circle className="h-3.5 w-3.5 text-muted" />
-        )}
-      </span>
-      <AgentIcon
-        agentKey={item.key}
-        displayName={item.displayName}
-        className="h-5 w-5 rounded-[4px]"
-      />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-secondary">
-        {item.displayName}
-      </span>
-      {item.badgeLabel && (
-        <span className="shrink-0 rounded-full border border-border-subtle bg-bg-secondary px-1.5 py-0.5 text-[11px] text-muted">
-          {item.badgeLabel}
+      <button
+        type="button"
+        onClick={() => onToggle(item.key, !item.enabled)}
+        disabled={disabled}
+        className="flex min-w-0 flex-1 items-center gap-2 outline-none text-left"
+      >
+        <span className="shrink-0">
+          {loading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
+          ) : item.enabled ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+          ) : (
+            <Circle className="h-3.5 w-3.5 text-muted" />
+          )}
         </span>
-      )}
-    </button>
+        <AgentIcon
+          agentKey={item.key}
+          displayName={item.displayName}
+          className="h-5 w-5 rounded-[4px]"
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-secondary">
+          {item.displayName}
+        </span>
+        {item.badgeLabel && (
+          <span className="shrink-0 rounded-full border border-border-subtle bg-bg-secondary px-1.5 py-0.5 text-[11px] text-muted">
+            {item.badgeLabel}
+          </span>
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onEditAgent(item);
+        }}
+        className="shrink-0 rounded p-1 text-muted hover:text-accent hover:bg-surface outline-none opacity-40 transition-opacity group-hover:opacity-100 focus:opacity-100"
+        title="编辑配置"
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
+    </div>
   );
 }

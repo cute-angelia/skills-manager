@@ -103,7 +103,7 @@ Every installer ships the CLI inside the app — see [Where the binary lives](#w
 
 ## Quick Start
 
-1. Install skills from local folders, Git repositories, archives, or the marketplace.
+1. Install skills from local folders, Git repositories, archives, or the marketplace. Or open **Skill Library → New Skill** to enter a name, description, and Markdown instructions with a preview. YAML frontmatter is generated automatically; creation does not deploy the skill to any agent.
 2. Open **Global Workspace** from the sidebar and pick an agent (e.g. Claude Code).
 3. Click a **Preset** pill to activate its skills for that agent, or use **+ Add Skills** to pick from your library and toggle target agents inline. Active presets show a ✓; partial installs show a count badge.
 4. To manage project-local skills, open a **Project Workspace** and use the same preset pills or the **+ Add Skills** picker with its multi-agent target selector.

@@ -1,4 +1,26 @@
 {
+  "createSkill": {
+    "title": "Nueva Skill",
+    "subtitle": "Escribe una skill en tu biblioteca y luego añádela a un Preset o despliégala en un Agent.",
+    "name": "Nombre / identificador del directorio",
+    "nameHint": "De 1 a 64 letras minúsculas, dígitos o guiones; empieza y termina con letra o dígito. No se permiten nombres reservados de Windows (con, nul, com1, etc.).",
+    "description": "Descripción y condiciones de uso",
+    "descriptionPlaceholder": "Por ejemplo: Usar para resumir reuniones y extraer decisiones y tareas pendientes.",
+    "body": "Contenido Markdown",
+    "edit": "Editar",
+    "preview": "Vista previa",
+    "bodyHint": "Escribe solo las instrucciones. Los metadatos YAML se generan automáticamente. Crear no despliega la skill.",
+    "template": "# Instrucciones\n\n1. Lee el material proporcionado y confirma el objetivo.\n2. Completa la tarea sin inventar información.\n3. Presenta resultados claros e indica lo que requiere confirmación.\n\n## Requisitos de salida\n\nDescribe el formato, las precauciones y los límites.",
+    "create": "Crear Skill",
+    "creating": "Creando…",
+    "invalidName": "Usa de 1 a 64 letras minúsculas, dígitos o guiones, empezando y terminando con letra o dígito. No uses nombres reservados de Windows.",
+    "requiredDescription": "Introduce una descripción y las condiciones de uso.",
+    "requiredBody": "Introduce las instrucciones de la skill.",
+    "frontmatter": "El contenido no debe comenzar con ---. Los metadatos se generan automáticamente.",
+    "exists": "Ya existe una skill o directorio con ese nombre. Elige otro. No se modificó el contenido existente.",
+    "success": "Skill creada en la biblioteca. Aún no se ha desplegado en ningún Agent.",
+    "refreshFailed": "La skill se creó, pero no se pudo actualizar la lista. Actualízala manualmente."
+  },
   "app": {
     "name": "Skills Manager"
   },
@@ -614,6 +636,7 @@
     "download": "Descargar",
     "dragToReorder": "Arrastra para reordenar",
     "editPath": "Editar ruta",
+    "editAgentConfig": "Editar configuración de agente",
     "enableAgent": "Habilitar este agente",
     "enableAll": "Habilitar todo",
     "enabledAgents": "Habilitados",

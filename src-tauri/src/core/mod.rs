@@ -5,6 +5,7 @@ pub mod central_repo;
 pub mod cli_bridge;
 pub mod content_hash;
 pub mod crypto;
+pub mod create_skill;
 pub mod error;
 pub mod file_manager;
 pub mod file_watcher;

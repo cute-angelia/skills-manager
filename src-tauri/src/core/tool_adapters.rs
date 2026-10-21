@@ -240,14 +240,14 @@ pub fn default_tool_adapters() -> Vec<ToolAdapter> {
         ToolAdapter {
             key: "antigravity".into(),
             display_name: "Antigravity".into(),
-            relative_skills_dir: ".gemini/antigravity/skills".into(),
+            relative_skills_dir: ".gemini/config/skills".into(),
             relative_detect_dir: ".gemini/antigravity".into(),
-            additional_scan_dirs: vec![],
+            additional_scan_dirs: vec![".gemini/antigravity/skills".into()],
             override_skills_dir: None,
             category: ToolCategory::Coding,
             is_custom: false,
             recursive_scan: false,
-            project_relative_skills_dir: None,
+            project_relative_skills_dir: Some(".agents/skills".into()),
         },
         ToolAdapter {
             key: "amp".into(),
@@ -1018,7 +1018,12 @@ mod tests {
             .find(|adapter| adapter.key == "antigravity")
             .expect("antigravity adapter should exist");
 
-        assert_eq!(adapter.relative_skills_dir, ".gemini/antigravity/skills");
+        assert_eq!(adapter.relative_skills_dir, ".gemini/config/skills");
+        assert_eq!(adapter.project_relative_skills_dir(), ".agents/skills");
+        assert_eq!(
+            adapter.additional_scan_dirs,
+            vec![".gemini/antigravity/skills".to_string()]
+        );
     }
 
     #[test]

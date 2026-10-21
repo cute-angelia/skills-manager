@@ -1,4 +1,26 @@
 {
+  "createSkill": {
+    "title": "New Skill",
+    "subtitle": "Write a skill directly into your library, then add it to a Preset or deploy it to an Agent.",
+    "name": "Name / directory identifier",
+    "nameHint": "1–64 lowercase letters, digits or hyphens; start and end with a letter or digit. Windows reserved names (con, nul, com1, etc.) are not allowed.",
+    "description": "Description and trigger conditions",
+    "descriptionPlaceholder": "For example: Use when the user asks to summarize meeting notes and extract decisions and action items.",
+    "body": "Markdown body",
+    "edit": "Edit",
+    "preview": "Preview",
+    "bodyHint": "Write instructions only. YAML metadata is generated from the form. Creation does not deploy the skill.",
+    "template": "# Instructions\n\n1. Read the supplied material and confirm the goal.\n2. Complete the task without inventing missing information.\n3. Present clear results and flag anything that needs confirmation.\n\n## Output requirements\n\nDescribe the format, precautions and constraints.",
+    "create": "Create Skill",
+    "creating": "Creating…",
+    "invalidName": "Use 1–64 lowercase letters, digits or hyphens, starting and ending with a letter or digit. Windows reserved names are not allowed.",
+    "requiredDescription": "Enter a description and trigger conditions.",
+    "requiredBody": "Enter the skill instructions.",
+    "frontmatter": "Do not start the body with ---. Name and description metadata is generated automatically.",
+    "exists": "A skill or directory already uses this name. Choose another name. Existing content was not changed.",
+    "success": "Skill created in the library. It has not been deployed to any Agent.",
+    "refreshFailed": "Skill created, but the list could not refresh. Please refresh manually."
+  },
   "app": {
     "name": "Skills Manager"
   },
@@ -583,6 +605,7 @@
     "enableAgent": "Enable this agent",
     "disableAgent": "Disable this agent",
     "editPath": "Edit path",
+    "editAgentConfig": "Edit Agent Configuration",
     "resetPath": "Reset to default",
     "dragToReorder": "Drag to reorder",
     "pathOverridden": "Custom path",

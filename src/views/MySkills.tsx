@@ -37,6 +37,7 @@ import { useMultiSelect } from "../hooks/useMultiSelect";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { TagRenameDialog } from "../components/TagRenameDialog";
 import { SkillDetailPanel } from "../components/SkillDetailPanel";
+import { CreateSkillDialog } from "../components/CreateSkillDialog";
 import { MultiSelectToolbar } from "../components/MultiSelectToolbar";
 import { BatchTagDialog } from "../components/BatchTagDialog";
 import { BatchSyncAgentDialog } from "../components/BatchSyncAgentDialog";
@@ -136,6 +137,7 @@ function centralDirName(skill: ManagedSkill) {
 }
 
 export function MySkills() {
+  const [createSkillOpen, setCreateSkillOpen] = useState(false);
   const { t } = useTranslation();
   const navigate = useNavigate();
   const {
@@ -1157,6 +1159,9 @@ export function MySkills() {
 
         {/* Keep all library actions in one toolbar so they wrap together. */}
         <div className="flex items-center gap-3">
+          <button type="button" onClick={() => setCreateSkillOpen(true)} className="app-button-primary">
+            <Plus className="mr-1.5 h-4 w-4" />{t("createSkill.title")}
+          </button>
           <div className="app-segmented app-toolbar-segmented shrink-0">
             {(() => {
               const mode = getGitToolbarMode();
@@ -1865,6 +1870,15 @@ export function MySkills() {
         </DndContext>
       )}
 
+      {createSkillOpen && (
+        <CreateSkillDialog
+          onClose={() => setCreateSkillOpen(false)}
+          onCreated={async () => {
+            await Promise.all([refreshManagedSkills(), refreshPresets()]);
+            clearFilters();
+          }}
+        />
+      )}
       <SkillDetailPanel
         key={selectedSkill?.id ?? "skill-detail-empty"}
         skill={selectedSkill}
