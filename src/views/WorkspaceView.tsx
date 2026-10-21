@@ -155,7 +155,7 @@ function WorkspaceSkillCard({
   return (
     <div
       className={cn(
-        "app-panel group relative flex h-full cursor-pointer flex-col overflow-hidden shadow-card transition-all hover:-translate-y-px hover:border-border hover:shadow-card-hover",
+        "app-panel group relative flex cursor-pointer flex-col overflow-hidden shadow-card transition-all hover:-translate-y-px hover:border-border hover:shadow-card-hover",
         selectable && selected && "ring-1 ring-accent border-accent/40"
       )}
       onClick={onClick}
@@ -1297,4 +1297,3 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
     </div>
   );
 }
-

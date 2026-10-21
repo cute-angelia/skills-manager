@@ -121,7 +121,7 @@ function SortableSkillItem({
   ) : null;
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} className={cn("h-full", className)}>
+    <div ref={setNodeRef} style={style} {...attributes} className={cn("flex min-w-0 flex-col", className)}>
       {children(handle)}
     </div>
   );
@@ -1417,7 +1417,7 @@ export function MySkills() {
                 {(dragHandle) => (
                 <div
                   className={cn(
-                    "app-panel group relative flex h-full cursor-pointer flex-col shadow-card transition-all hover:-translate-y-px hover:border-border hover:shadow-card-hover",
+                    "app-panel group relative flex flex-1 cursor-pointer flex-col shadow-card transition-all hover:-translate-y-px hover:border-border hover:shadow-card-hover",
                     isMultiSelect && selectedIds.has(skill.id) && "ring-1 ring-accent border-accent/40"
                   )}
                   onClick={() =>
