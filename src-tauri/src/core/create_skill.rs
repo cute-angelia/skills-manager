@@ -153,6 +153,108 @@ pub fn create_skill_unlocked(
     })
 }
 
+/// Edit an existing skill's name, description, and Markdown instructions.
+/// The caller holds the foreground repository lock.
+pub fn edit_skill_unlocked(
+    store: &SkillStore,
+    skill_id: &str,
+    new_name: Option<&str>,
+    description: &str,
+    body: &str,
+) -> Result<CreatedSkill> {
+    let skill = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("SKILL_NOT_FOUND"))?;
+
+    let description = description.trim();
+    let body = body.trim();
+
+    if description.is_empty() {
+        bail!("EMPTY_DESCRIPTION");
+    }
+    if body.is_empty() {
+        bail!("EMPTY_BODY");
+    }
+    if body
+        .lines()
+        .next()
+        .is_some_and(|line| line.trim_end() == "---")
+    {
+        bail!("BODY_FRONTMATTER");
+    }
+
+    let target_name = match new_name {
+        Some(n) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => skill.name.clone(),
+    };
+
+    let name_changed = target_name != skill.name;
+    let old_dir = std::path::PathBuf::from(&skill.central_path);
+    let new_dir = if name_changed {
+        let reserved = matches!(target_name.as_str(), "con" | "prn" | "aux" | "nul")
+            || (target_name.len() == 4
+                && (target_name.starts_with("com") || target_name.starts_with("lpt"))
+                && matches!(target_name.as_bytes()[3], b'1'..=b'9'));
+        if target_name.is_empty()
+            || target_name.len() > 64
+            || reserved
+            || !target_name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            || !target_name.as_bytes()[0].is_ascii_alphanumeric()
+            || !target_name.as_bytes()[target_name.len() - 1].is_ascii_alphanumeric()
+        {
+            bail!("INVALID_SKILL_NAME");
+        }
+
+        let dir = central_repo::skills_dir().join(&target_name);
+        if store.get_all_skills()?.iter().any(|s| {
+            s.id != skill_id
+                && (s.name.eq_ignore_ascii_case(&target_name)
+                    || s.central_path == dir.to_string_lossy())
+        }) {
+            bail!("SKILL_EXISTS: {target_name}");
+        }
+
+        if old_dir.exists() && old_dir != dir {
+            fs::rename(&old_dir, &dir)?;
+        }
+        dir
+    } else {
+        old_dir
+    };
+
+    #[derive(Serialize)]
+    struct Frontmatter<'a> {
+        name: &'a str,
+        description: &'a str,
+    }
+    let yaml = serde_yaml::to_string(&Frontmatter {
+        name: &target_name,
+        description,
+    })?;
+    fs::create_dir_all(&new_dir)?;
+    fs::write(new_dir.join("SKILL.md"), format!("---\n{yaml}---\n\n{body}\n"))?;
+
+    let now = chrono::Utc::now().timestamp_millis();
+    let new_hash = content_hash::hash_directory(&new_dir)?;
+
+    let mut record = skill;
+    record.name = target_name.to_string();
+    record.description = Some(description.to_string());
+    record.central_path = new_dir.to_string_lossy().into_owned();
+    record.content_hash = Some(new_hash);
+    record.updated_at = now;
+
+    store.upsert_skill(&record)?;
+    sync_metadata::ensure_skill_metadata_unlocked(store, skill_id)?;
+
+    Ok(CreatedSkill {
+        skill_id: skill_id.to_string(),
+        name: target_name.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,5 +446,60 @@ mod tests {
         );
         assert_eq!(fs::read_link(destination).unwrap(), target);
         assert!(!target.exists());
+    }
+
+    #[test]
+    fn edits_skill_content_and_updates_hash_and_metadata() {
+        let lib = Library::new();
+        let created = create_skill_unlocked(
+            &lib.store,
+            "orig-skill",
+            "Old description",
+            "# Old body",
+        )
+        .unwrap();
+
+        let updated = edit_skill_unlocked(
+            &lib.store,
+            &created.skill_id,
+            None,
+            "New description",
+            "# New body\n\n- Updated instruction",
+        )
+        .unwrap();
+
+        assert_eq!(updated.name, "orig-skill");
+        let skill = lib.store.get_skill_by_id(&created.skill_id).unwrap().unwrap();
+        assert_eq!(skill.description.as_deref(), Some("New description"));
+        let md = fs::read_to_string(central_repo::skills_dir().join("orig-skill/SKILL.md")).unwrap();
+        assert!(md.contains("description: New description"));
+        assert!(md.contains("# New body"));
+    }
+
+    #[test]
+    fn edits_skill_name_renames_directory() {
+        let lib = Library::new();
+        let created = create_skill_unlocked(
+            &lib.store,
+            "before-rename",
+            "Desc",
+            "# Body",
+        )
+        .unwrap();
+
+        let updated = edit_skill_unlocked(
+            &lib.store,
+            &created.skill_id,
+            Some("after-rename"),
+            "Updated Desc",
+            "# Updated Body",
+        )
+        .unwrap();
+
+        assert_eq!(updated.name, "after-rename");
+        assert!(!central_repo::skills_dir().join("before-rename").exists());
+        assert!(central_repo::skills_dir().join("after-rename").exists());
+        let skill = lib.store.get_skill_by_id(&created.skill_id).unwrap().unwrap();
+        assert_eq!(skill.name, "after-rename");
     }
 }

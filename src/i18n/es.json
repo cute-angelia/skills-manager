@@ -21,6 +21,28 @@
     "success": "Skill creada en la biblioteca. Aún no se ha desplegado en ningún Agent.",
     "refreshFailed": "La skill se creó, pero no se pudo actualizar la lista. Actualízala manualmente."
   },
+  "editSkill": {
+    "title": "Editar Skill",
+    "subtitle": "Modifica el nombre, la descripción y las instrucciones Markdown.",
+    "editButton": "Editar esta Skill",
+    "name": "Nombre / identificador del directorio",
+    "nameHint": "Cambiar el nombre renombra el directorio de la skill y actualiza referencias.",
+    "description": "Descripción y condiciones de uso",
+    "descriptionPlaceholder": "Describe cuándo usar esta skill.",
+    "body": "Contenido Markdown",
+    "edit": "Editar",
+    "preview": "Vista previa",
+    "bodyHint": "Escribe las instrucciones. El encabezado YAML se genera automáticamente.",
+    "save": "Guardar cambios",
+    "saving": "Guardando…",
+    "success": "Skill actualizada correctamente.",
+    "openFolder": "Abrir carpeta",
+    "invalidName": "Usa de 1 a 64 letras minúsculas, dígitos o guiones, empezando y terminando con letra o dígito. No uses nombres reservados de Windows.",
+    "requiredDescription": "Introduce una descripción y las condiciones de uso.",
+    "requiredBody": "Introduce las instrucciones de la skill.",
+    "frontmatter": "El contenido no debe comenzar con ---. Los metadatos se generan automáticamente.",
+    "exists": "Ya existe una skill o directorio con ese nombre. Elige otro nombre."
+  },
   "app": {
     "name": "Skills Manager"
   },

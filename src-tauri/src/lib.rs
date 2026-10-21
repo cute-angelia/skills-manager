@@ -1022,6 +1022,8 @@ pub fn run() {
             commands::skills::delete_managed_skills,
             commands::skills::install_local,
             commands::create_skill::create_skill,
+            commands::create_skill::edit_skill,
+            commands::create_skill::reveal_skill_folder,
             commands::skills::install_git,
             commands::skills::preview_git_install,
             commands::skills::confirm_git_install,

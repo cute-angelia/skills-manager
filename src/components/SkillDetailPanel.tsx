@@ -6,9 +6,12 @@ import {
   Github,
   HardDrive,
   Globe,
+  Pencil,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../utils";
+import { useApp } from "../context/AppContext";
+import { EditSkillDialog } from "./EditSkillDialog";
 import {
   getSkillDocument,
   getSourceSkillDocument,
@@ -95,6 +98,8 @@ function SkillDetailPanelContent({
   onProjectsChanged?: () => void;
 }) {
   const { t } = useTranslation();
+  const { refreshManagedSkills } = useApp();
+  const [editOpen, setEditOpen] = useState(false);
   const [doc, setDoc] = useState<SkillDocument | null>(null);
   const [sourceDoc, setSourceDoc] = useState<SourceSkillDocument | null>(null);
   const [sourceDiff, setSourceDiff] = useState<SkillSourceDiff | null>(null);
@@ -304,13 +309,26 @@ function SkillDetailPanelContent({
   );
 
   return (
-    <DetailSheet
-      open={true}
-      title={skill.name}
-      description={skill.description ? <p className="line-clamp-3">{skill.description}</p> : undefined}
-      meta={meta}
-      onClose={onClose}
-    >
+    <>
+      <DetailSheet
+        open={true}
+        title={
+          <div className="flex items-center gap-2.5">
+            <span className="truncate">{skill.name}</span>
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className="shrink-0 rounded-md p-1.5 text-muted hover:text-accent hover:bg-surface-hover transition-colors outline-none"
+              title={t("editSkill.editButton")}
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          </div>
+        }
+        description={skill.description ? <p className="line-clamp-3">{skill.description}</p> : undefined}
+        meta={meta}
+        onClose={onClose}
+      >
       {toolToggles && onToggleTool && (
         <AgentToggleSection
           items={toggleItems}
@@ -384,5 +402,26 @@ function SkillDetailPanelContent({
         <div className="mt-12 text-center text-[13px] text-muted">{t("common.documentMissing")}</div>
       )}
     </DetailSheet>
+
+    {editOpen && (
+      <EditSkillDialog
+        skill={skill}
+        initialDoc={activeDoc}
+        onClose={() => setEditOpen(false)}
+        onSaved={async () => {
+          localRequestIdRef.current += 1;
+          const requestId = localRequestIdRef.current;
+          try {
+            const nextDoc = await getSkillDocument(skillId);
+            if (requestId === localRequestIdRef.current) {
+              setDoc(nextDoc);
+            }
+          } catch {}
+          await refreshManagedSkills();
+          onProjectsChanged?.();
+        }}
+      />
+    )}
+  </>
   );
 }

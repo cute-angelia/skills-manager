@@ -21,6 +21,28 @@
     "success": "라이브러리에 Skill을 만들었습니다. 아직 Agent에 배포되지 않았습니다.",
     "refreshFailed": "Skill은 생성되었지만 목록을 새로 고치지 못했습니다. 수동으로 새로 고치세요."
   },
+  "editSkill": {
+    "title": "Skill 수정",
+    "subtitle": "스킬 이름, 설명 및 마크다운 지침을 수정합니다.",
+    "editButton": "이 Skill 수정",
+    "name": "이름 / 디렉터리 식별자",
+    "nameHint": "이름을 변경하면 스킬 디렉터리 이름이 변경되고 참조가 업데이트됩니다.",
+    "description": "설명 및 실행 조건",
+    "descriptionPlaceholder": "이 스킬을 사용하는 시점을 설명하세요.",
+    "body": "Markdown 본문",
+    "edit": "편집",
+    "preview": "미리보기",
+    "bodyHint": "스킬 실행 지침을 작성하세요. YAML 헤더는 자동 생성됩니다.",
+    "save": "변경 사항 저장",
+    "saving": "저장 중…",
+    "success": "Skill이 업데이트되었습니다.",
+    "openFolder": "폴더 열기",
+    "invalidName": "소문자 영문, 숫자, 하이픈 1–64자를 사용하고 처음과 끝은 문자 또는 숫자로 지정하세요. Windows 예약 이름은 사용할 수 없습니다.",
+    "requiredDescription": "설명과 실행 조건을 입력하세요.",
+    "requiredBody": "스킬 지침을 입력하세요.",
+    "frontmatter": "본문을 ---로 시작하지 마세요. 이름과 설명 메타데이터는 자동 생성됩니다.",
+    "exists": "같은 이름의 스킬 또는 디렉터리가 있습니다. 다른 이름을 사용하세요."
+  },
   "app": {
     "name": "Skills Manager"
   },

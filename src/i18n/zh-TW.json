@@ -5,7 +5,7 @@
     "name": "名稱 / 目錄識別碼",
     "nameHint": "1–64 個小寫英文字母、數字或連字號，首尾須為字母或數字；不能使用 Windows 保留名稱（如 con、nul、com1）。",
     "description": "描述與觸發條件",
-    "descriptionPlaceholder": "例如：當使用者要求整理會議紀錄、提煉結論和待辦時使用。",
+    "descriptionPlaceholder": "例如：當使用者要求整理會議紀錄、提煉結論和待办時使用。",
     "body": "Markdown 內文",
     "edit": "編輯",
     "preview": "預覽",
@@ -20,6 +20,28 @@
     "exists": "此名稱已被技能或目錄使用，請更換名稱。既有內容未被修改。",
     "success": "Skill 已建立並加入技能庫，尚未部署至 Agent。",
     "refreshFailed": "Skill 已建立，但清單更新失敗，請手動重新整理。"
+  },
+  "editSkill": {
+    "title": "編輯 Skill",
+    "subtitle": "修改技能名稱、描述與執行說明內文。",
+    "editButton": "編輯此 Skill",
+    "name": "名稱 / 目錄識別碼",
+    "nameHint": "修改名稱將重命名技能目錄並更新參照。",
+    "description": "描述與觸發條件",
+    "descriptionPlaceholder": "說明何時使用此技能。",
+    "body": "Markdown 內文",
+    "edit": "編輯",
+    "preview": "預覽",
+    "bodyHint": "說明技能執行邏輯，名稱與描述會自動產生 YAML 標頭。",
+    "save": "儲存修改",
+    "saving": "儲存中…",
+    "success": "Skill 已成功更新。",
+    "openFolder": "開啟資料夾",
+    "invalidName": "名稱須為 1–64 個小寫英文字母、數字或連字號，首尾為字母或數字，且不能是 Windows 保留名稱。",
+    "requiredDescription": "請填寫描述與觸發條件。",
+    "requiredBody": "請填寫技能內文。",
+    "frontmatter": "內文不應以 --- 開頭。名稱和描述由表單自動產生，無需填寫 YAML 標頭。",
+    "exists": "此名稱已被其他技能或目錄使用，請更換名稱。"
   },
   "app": {
     "name": "Skills Manager"

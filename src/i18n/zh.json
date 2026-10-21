@@ -21,6 +21,28 @@
     "success": "Skill 已创建并加入技能库，尚未部署到 Agent。",
     "refreshFailed": "Skill 已创建，但列表刷新失败，请手动刷新。"
   },
+  "editSkill": {
+    "title": "编辑 Skill",
+    "subtitle": "修改技能名称、描述与执行说明正文。",
+    "editButton": "编辑此 Skill",
+    "name": "名称 / 目录标识",
+    "nameHint": "修改名称将重命名技能目录并更新引用。",
+    "description": "描述与触发条件",
+    "descriptionPlaceholder": "说明何时使用此技能。",
+    "body": "Markdown 正文",
+    "edit": "编辑",
+    "preview": "预览",
+    "bodyHint": "说明技能执行逻辑，名称与描述会自动生成 YAML 头部。",
+    "save": "保存修改",
+    "saving": "保存中…",
+    "success": "Skill 已成功更新。",
+    "openFolder": "打开文件夹",
+    "invalidName": "名称须为 1–64 位小写英文字母、数字或连字符，首尾为字母或数字，且不能是 Windows 保留名称。",
+    "requiredDescription": "请填写描述与触发条件。",
+    "requiredBody": "请填写技能正文。",
+    "frontmatter": "正文不应以 --- 开头。名称和描述由表单自动生成，无需填写 YAML 头部。",
+    "exists": "该名称已被其他技能或目录占用，请换一个名称。"
+  },
   "app": {
     "name": "Skills Manager"
   },

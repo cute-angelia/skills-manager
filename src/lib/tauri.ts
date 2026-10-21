@@ -273,6 +273,22 @@ export const installLocal = (sourcePath: string, name?: string) =>
 export const createSkill = (name: string, description: string, body: string) =>
   invoke<InstallLocalResult>("create_skill", { name, description, body });
 
+export const editSkill = (
+  skillId: string,
+  name: string | null,
+  description: string,
+  body: string
+) =>
+  invoke<InstallLocalResult>("edit_skill", {
+    skillId,
+    name: name || null,
+    description,
+    body,
+  });
+
+export const revealSkillFolder = (skillId: string) =>
+  invoke<void>("reveal_skill_folder", { skillId });
+
 export const installGit = (repoUrl: string, name?: string) =>
   invoke<void>("install_git", { repoUrl, name: name || null });
 
