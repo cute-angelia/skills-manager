@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run src/ && npm run test:markdown && npm run test:skill-grid",
     "build": "tsc -b && vite build",
     "test:markdown": "node --test scripts/markdown-compat.test.mjs",
     "test:skill-grid": "node --test scripts/skill-grid-compat.test.mjs",
