@@ -5,6 +5,38 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.43.1] - 2026-10-27
+
+### 发布概览
+- 技能库没变时，你在 Agent 目录里改过的副本不再被日常同步覆盖；CLI 的 `skills check` 现在会检查从本地文件夹安装的 Skill。
+
+### 用户可见更新
+- **技能库没变时，改过的副本不再被覆盖** — 以复制方式部署的 Skill，在 PresetBar 应用 Preset、从「添加 Skills」弹层添加、批量部署、安装后的同步，以及内容没变的更新或重新导入时，都会被重新复制一遍，你在 Agent 目录里做的修改随之丢失。现在只要技能库的内容和部署时一样，这些操作就不动副本，和启动时的同步一致。技能库真的更新时，副本仍会被替换，和以前一样。这样的副本要等下次内容变化，或取消部署后重新部署，才会改成链接（#598）。
+- **`skills-manager-cli skills check` 会检查本地 Skill** — 以前对从本地文件夹安装或导入的 Skill 直接跳过，输出 `skipped: true`。现在和应用一样，拿它和源文件夹比对，报告 `up_to_date`、`update_available` 或 `source_missing`。本地检查每次都实际执行，更新检查的缓存只用于 Git 来源。来自网站的 Skill 仍然跳过（#597、#590）。
+
+### 开发者与治理更新
+- 启动同步用来判断「已部署的副本是否仍是最新」的检查，抽成了一个函数 `recorded_target_is_current`，五个同步入口都调用它。只看调用方 Agent 自己的记录，所以多个 Agent 共用一个技能目录时（amp 与 replit、cline 与 warp），行为和以前一样。副本的位置上放着文件或指向别处的链接时，启动同步现在会报告拒绝写入，而不是静默跳过（#598）。
+- `skills/manage-skills` 补充说明：本地 Skill 的 `check` 比对的是什么，`update_available` 和 `source_missing` 是什么意思（#597）。
+## [1.43.0] - 2026-10-21
+
+### 发布概览
+- 「我的 Skill」可以按来源筛选和分组；新增支持 MiniMax Code 和海外版 WorkBuddy。从全局工作区上传的 Skill 下次启动不再消失；Agent 的技能目录换了位置，改过的副本也不会被删；设置页会当场拒绝下次启动无法迁入的中央仓库目录。
+
+### 用户可见更新
+- **「我的 Skill」按来源筛选和分组** — 来源选择器只显示来自某个来源的 Skill；打开分组后，每个来源归到一个标题下，并显示 Skill 数量。同一个仓库不管是用 SSH、HTTPS、`owner/repo` 还是 skills.sh 添加的，都算一个来源；网站来源的 Skill 按域名分组。多于一个 Skill 的来源默认折叠，搜索时所有分组都会展开。分组时不能拖动排序。感谢 @ZhuYichuan（#589、#530）。
+- **MiniMax Code** 成为内置 Agent：用户级 Skill 部署到 `~/.minimax/skills`，项目级部署到 `<repo>/.minimax/skills`。感谢 @ZhuYichuan（#592）。
+- **WorkBuddy AI（海外版）** — 海外版 WorkBuddy 从 `~/.workbuddy-ai/skills` 读取 Skill，所以部署给 WorkBuddy 的 Skill 在海外版里从来没被加载。现在它是单独的 Agent「WorkBuddy AI」；国内版仍用 `~/.workbuddy/skills`。感谢 @huaqian0226（#588、#587、#468）。
+- **从全局工作区上传的 Skill 会留在技能库里** — 上传后，下次启动应用或 CLI 时，这个 Skill 和它的部署记录可能从技能库里消失，文件却还在磁盘上。现在上传会把技能库需要的信息都存好。已经丢失的记录不会恢复。感谢 @drkraft（#586）。
+- **Agent 的技能目录换了位置，改过的副本不会被删** — 在设置里改了 Agent 的技能目录，或者更新后它的默认路径变了，旧路径下以复制方式部署的 Skill 会连同你在里面的修改一起被删掉。现在这些副本会移到技能库里的 `kept-copies/<agent>/`。旧路径下的链接仍然删除。取消部署、停用 Agent、切换到不含这个 Skill 的 Preset，仍然会删掉副本（#595、#593）。
+- **设置页拒绝无法迁入的中央仓库目录** — 新的技能库位置要到下次启动才生效，而启动时会拒绝非空目录和位于当前技能库内的目录，并且不提示，看起来就像设置没生效（#509、#541）。现在保存时就会拒绝这样的目录，并给出提示，不再显示 `[object Object]`。迁移警告显示在路径下方，提示里也写明要完全退出应用（包括托盘）（#596）。
+- **来源里没有某个 Skill 时，报错更清楚** — 安装一个在取得的仓库版本里不存在的 Skill，报错里显示的是一个临时目录路径。现在报错会写出 Skill 的名字，并提示检查来源和子路径（#594）。
+- **Windows：可以用 Scoop 安装** — 先 `scoop bucket add extras`，再 `scoop install extras/skills-manager`。感谢 @12dxc 把它加入 Scoop Extras（#591）。
+
+### 开发者与治理更新
+- 前端组件测试：Vitest + jsdom，新增 `npm test` 脚本和 PresetBar 的测试，Frontend CI 会运行它们。感谢 @huoguojun123（#570）。
+- 新增 `REVIEW.md`：按改动涉及的内容决定评审深度，并列出本仓库反复出现的缺陷类型。
+- 判断「目标是否在当前技能库内」时会先解析链接，保存路径和启动迁移都是如此。以前经由链接指回技能库的目标能通过检查，启动迁移随后会尝试把技能库复制进它自己（#596）。
+- `sync_skill_to_active_scenario` 和 `sync_desired_targets` 一样，不再动另一个工具正在使用的部署路径（#595）。
 ## [1.42.2] - 2026-10-18
 
 ### 发布概览
