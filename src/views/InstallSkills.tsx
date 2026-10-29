@@ -22,6 +22,7 @@ import {
   MoreHorizontal,
   Pencil,
   Calendar,
+  ChevronDown,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -35,6 +36,8 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import { StatusBanner } from "../components/StatusBanner";
 import { getErrorMessage, getErrorKind } from "../lib/error";
+import { normalizeSkillSearch, skillSearchMatches } from "../lib/skillSearch";
+import { getDiscoveredGroupKey } from "../lib/skillSource";
 
 const MARKET_PAGE_SIZE = 24;
 const MARKET_SEARCH_STEP = 60;
@@ -45,9 +48,12 @@ const MARKET_SEARCH_CACHE_MAX_ENTRIES = 150;
 // their source is the domain, not a GitHub owner/repo.
 const SKILLS_SH_SITE_REF = /\/site\/([^/]+)\/([^/?#]+)\/?$/;
 
+// Default selected agents in local scanner tab
+const DEFAULT_SELECTED_LOCAL_AGENTS = ["codex", "antigravity", "claude_code"];
+
 export function InstallSkills() {
   const { t } = useTranslation();
-  const { refreshPresets, refreshManagedSkills, managedSkills, openSkillDetailById } = useApp();
+  const { refreshPresets, refreshManagedSkills, managedSkills, openSkillDetailById, tools } = useApp();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"market" | "local" | "git">("market");
@@ -75,6 +81,22 @@ export function InstallSkills() {
   const [importingPaths, setImportingPaths] = useState<Set<string>>(new Set());
   const [importingAll, setImportingAll] = useState(false);
   const [renameEditing, setRenameEditing] = useState<Record<string, string>>({});
+  const [localScanQuery, setLocalScanQuery] = useState("");
+  const [localScanStatusFilter, setLocalScanStatusFilter] = useState<"all" | "pending" | "imported">("all");
+  const [selectedLocalAgents, setSelectedLocalAgents] = useState<string[]>(DEFAULT_SELECTED_LOCAL_AGENTS);
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
+  const agentDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!agentDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (agentDropdownRef.current && !agentDropdownRef.current.contains(e.target as Node)) {
+        setAgentDropdownOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, [agentDropdownOpen]);
   const marketListRef = useRef<HTMLDivElement | null>(null);
   const [sourceOverflowOpen, setSourceOverflowOpen] = useState(false);
   const [sourceOverflowSide, setSourceOverflowSide] = useState<"left" | "right">("left");
@@ -194,12 +216,18 @@ export function InstallSkills() {
     setSearchParams({ tab });
   };
 
+  const selectedLocalAgentsRef = useRef(selectedLocalAgents);
+  selectedLocalAgentsRef.current = selectedLocalAgents;
+  const isAllAgentsSelectedRef = useRef(false);
+
   const runScan = useCallback(async () => {
     setScanLoading(true);
     setLocalError(null);
     try {
-      const result = await api.scanLocalSkills();
+      const selected = isAllAgentsSelectedRef.current ? undefined : selectedLocalAgentsRef.current;
+      const result = await api.scanLocalSkills(selected);
       setScanResult(result);
+      await refreshManagedSkills();
     } catch (error: unknown) {
       console.error(error);
       const message = getErrorMessage(error, t("common.error"));
@@ -208,7 +236,7 @@ export function InstallSkills() {
     } finally {
       setScanLoading(false);
     }
-  }, [t]);
+  }, [t, refreshManagedSkills]);
 
   // Silent variant used after install/import. Never surfaces a toast or
   // new error state — failure here must not mask the install success.
@@ -216,7 +244,8 @@ export function InstallSkills() {
   // leave previous error banners behind.
   const runScanSilent = useCallback(async () => {
     try {
-      const result = await api.scanLocalSkills();
+      const selected = isAllAgentsSelectedRef.current ? undefined : selectedLocalAgentsRef.current;
+      const result = await api.scanLocalSkills(selected);
       setScanResult(result);
       setLocalError(null);
     } catch (error: unknown) {
@@ -293,11 +322,6 @@ export function InstallSkills() {
     return () => { stale = true; };
   }, [activeTab, debouncedMarketQuery, marketReloadKey, marketSearchLimit, marketTab, pruneMarketSearchCache, t]);
 
-  useEffect(() => {
-    if (activeTab === "local" && !scanResult && !scanLoading) {
-      runScan();
-    }
-  }, [activeTab, scanLoading, scanResult, runScan]);
 
   const installLocalSource = async (sourcePath: string) => {
     const name = sourcePath.replace(/\\/g, "/").split("/").pop() || sourcePath;
@@ -579,16 +603,111 @@ export function InstallSkills() {
     }
   };
 
+  const scanGroups = useMemo(() => scanResult?.groups ?? [], [scanResult?.groups]);
+
+  const availableLocalAgents = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const group of scanGroups) {
+      const toolsInGroup = new Set(group.locations.map((loc) => loc.tool));
+      for (const tool of toolsInGroup) {
+        counts.set(tool, (counts.get(tool) ?? 0) + 1);
+      }
+    }
+    const systemToolKeys = (tools || []).map((t) => t.key);
+    const allKeys = new Set([
+      ...DEFAULT_SELECTED_LOCAL_AGENTS,
+      ...systemToolKeys,
+      ...counts.keys(),
+    ]);
+    return Array.from(allKeys)
+      .map((key) => {
+        const toolInfo = tools?.find((t) => t.key === key);
+        return {
+          key,
+          displayName: toolInfo?.display_name || key,
+          count: counts.get(key) ?? 0,
+          installed: toolInfo?.installed ?? false,
+        };
+      })
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        if (a.installed !== b.installed) return a.installed ? -1 : 1;
+        return a.displayName.localeCompare(b.displayName);
+      });
+  }, [scanGroups, tools]);
+
+  const isAllAgentsSelected =
+    availableLocalAgents.length > 0 &&
+    availableLocalAgents.every((a) => selectedLocalAgents.includes(a.key));
+  isAllAgentsSelectedRef.current = isAllAgentsSelected;
+
+  const agentFilteredScanGroups = useMemo(() => {
+    if (isAllAgentsSelected) return scanGroups;
+    return scanGroups.filter((group) =>
+      group.locations.some((loc) => selectedLocalAgents.includes(loc.tool))
+    );
+  }, [scanGroups, selectedLocalAgents, isAllAgentsSelected]);
+
+  const totalScanCount = agentFilteredScanGroups.length;
+  const pendingScanCount = agentFilteredScanGroups.filter((group) => !group.imported).length;
+  const importedScanCount = agentFilteredScanGroups.filter((group) => group.imported).length;
+
+  const hasLocalScanFilter =
+    localScanQuery.trim().length > 0 ||
+    localScanStatusFilter !== "all" ||
+    !isAllAgentsSelected;
+
+  const filteredScanGroups = useMemo(() => {
+    const query = normalizeSkillSearch(localScanQuery);
+    return agentFilteredScanGroups.filter((group, index) => {
+      if (localScanStatusFilter === "pending" && group.imported) return false;
+      if (localScanStatusFilter === "imported" && !group.imported) return false;
+      if (!query) return true;
+      const groupKey = getDiscoveredGroupKey(group, index);
+      const fields = [
+        group.name,
+        renameEditing[groupKey] ?? renameEditing[group.name],
+        ...group.locations.map((loc) => loc.found_path),
+      ];
+      return skillSearchMatches(query, fields);
+    });
+  }, [agentFilteredScanGroups, localScanStatusFilter, localScanQuery, renameEditing]);
+
+  const targetImportGroups = filteredScanGroups.filter((group) => !group.imported);
+
   const handleImportAllDiscovered = async () => {
     setImportingAll(true);
     try {
-      try {
-        await api.importAllDiscovered();
-      } catch (error: unknown) {
-        toast.error(getErrorMessage(error, t("common.error")));
-        return;
+      if (!hasLocalScanFilter) {
+        try {
+          await api.importAllDiscovered();
+        } catch (error: unknown) {
+          toast.error(getErrorMessage(error, t("common.error")));
+          return;
+        }
+        toast.success(t("install.scan.importedAll"));
+      } else {
+        let importedCount = 0;
+        const errors: string[] = [];
+        for (const [index, group] of targetImportGroups.entries()) {
+          const primaryLocation = group.locations[0];
+          if (!primaryLocation) continue;
+          const groupKey = getDiscoveredGroupKey(group, index);
+          const importName = renameEditing[groupKey] ?? renameEditing[group.name] ?? group.name;
+          try {
+            await api.importExistingSkill(primaryLocation.found_path, importName);
+            importedCount++;
+          } catch (err: unknown) {
+            errors.push(getErrorMessage(err, `${group.name} failed`));
+          }
+        }
+        if (errors.length > 0) {
+          toast.error(errors.slice(0, 3).join("; "));
+        }
+        if (importedCount > 0) {
+          toast.success(t("install.scan.importedFilteredSuccess", { count: importedCount }));
+        }
       }
-      toast.success(t("install.scan.importedAll"));
       const results = await Promise.allSettled([
         refreshPresets(),
         refreshManagedSkills(),
@@ -609,8 +728,6 @@ export function InstallSkills() {
     scrollMarketListToTop();
   };
 
-  const scanGroups = scanResult?.groups ?? [];
-  const pendingGroups = scanGroups.filter((group) => !group.imported);
   const sourceOptions = useMemo(
     () => Array.from(new Set(marketSkills.map((skill) => skill.source))),
     [marketSkills]
@@ -1289,11 +1406,17 @@ export function InstallSkills() {
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-hover px-3 py-2 text-[13px] font-medium text-secondary transition-colors hover:bg-surface-active disabled:opacity-50"
                 >
                   <RefreshCw className={cn("h-3.5 w-3.5", scanLoading && "animate-spin")} />
-                  {t("install.scan.rescan")}
+                  {scanResult ? t("install.scan.rescan") : t("install.scan.startScan")}
                 </button>
                 <button
                   onClick={handleImportAllDiscovered}
-                  disabled={scanLoading || importingAll || pendingGroups.length === 0}
+                  disabled={
+                    scanLoading ||
+                    importingAll ||
+                    (hasLocalScanFilter
+                      ? targetImportGroups.length === 0
+                      : pendingScanCount === 0)
+                  }
                   className="inline-flex items-center gap-1.5 rounded-lg border border-accent-border bg-accent-dark px-3 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
                 >
                   {importingAll ? (
@@ -1301,10 +1424,167 @@ export function InstallSkills() {
                   ) : (
                     <DownloadCloud className="h-3.5 w-3.5" />
                   )}
-                  {t("install.scan.importAll")}
+                  {hasLocalScanFilter
+                    ? t("install.scan.importFiltered", {
+                        count: targetImportGroups.length,
+                      })
+                    : t("install.scan.importAllCount", {
+                        count: pendingScanCount,
+                      })}
                 </button>
               </div>
             </div>
+
+            {!scanLoading && (
+              <div className="border-b border-border-subtle bg-surface/40 px-4 py-2.5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-1 items-center gap-2 sm:max-w-md">
+                    <div className="relative flex-1">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+                      <input
+                        type="text"
+                        value={localScanQuery}
+                        onChange={(e) => setLocalScanQuery(e.target.value)}
+                        placeholder={t("install.scan.searchPlaceholder")}
+                        className="app-input w-full bg-background pl-8 pr-8 py-1.5 text-[13px]"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                      {localScanQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setLocalScanQuery("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-secondary p-0.5 rounded-md"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="relative shrink-0" ref={agentDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setAgentDropdownOpen((prev) => !prev)}
+                        className={cn(
+                          "app-input flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-[12px] font-medium transition-colors bg-background",
+                          agentDropdownOpen ? "border-accent ring-1 ring-accent" : "hover:border-border-hover"
+                        )}
+                        title={t("install.scan.allAgents")}
+                      >
+                        <span className="truncate max-w-[120px]">
+                          {isAllAgentsSelected
+                            ? t("install.scan.allAgents")
+                            : selectedLocalAgents.length === 0
+                            ? t("install.scan.noAgentsSelected")
+                            : t("install.scan.agentFilter", { count: selectedLocalAgents.length })}
+                        </span>
+                        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted transition-transform", agentDropdownOpen && "rotate-180")} />
+                      </button>
+
+                      {agentDropdownOpen && (
+                        <div className="absolute left-0 sm:left-auto sm:right-0 top-full z-30 mt-1 w-64 rounded-xl border border-border bg-surface p-2 shadow-lg space-y-1.5">
+                          <div className="flex items-center justify-between border-b border-border-subtle pb-1.5 px-1 text-[11px] text-muted">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLocalAgents(availableLocalAgents.map((a) => a.key))}
+                              className="hover:text-accent transition-colors font-medium"
+                            >
+                              {t("install.scan.selectAllAgents")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLocalAgents(DEFAULT_SELECTED_LOCAL_AGENTS)}
+                              className="hover:text-accent transition-colors font-medium"
+                            >
+                              {t("install.scan.resetDefaultAgents")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLocalAgents([])}
+                              className="hover:text-accent transition-colors font-medium"
+                            >
+                              {t("install.scan.clearAgents")}
+                            </button>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto space-y-0.5">
+                            {availableLocalAgents.map((agent) => {
+                              const isChecked = selectedLocalAgents.includes(agent.key);
+                              return (
+                                <label
+                                  key={agent.key}
+                                  className="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-[12px] cursor-pointer hover:bg-surface-hover text-secondary transition-colors"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        setSelectedLocalAgents((prev) =>
+                                          isChecked ? prev.filter((k) => k !== agent.key) : [...prev, agent.key]
+                                        );
+                                      }}
+                                      className="rounded-md border-border text-accent focus:ring-accent"
+                                    />
+                                    <span className="truncate">{agent.displayName}</span>
+                                  </div>
+                                  {scanResult && agent.count > 0 && (
+                                    <span className="shrink-0 text-[11px] text-muted rounded-full bg-surface-hover px-1.5 py-0.5">
+                                      {agent.count}
+                                    </span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {scanResult && scanGroups.length > 0 && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto">
+                      <button
+                        type="button"
+                        onClick={() => setLocalScanStatusFilter("all")}
+                        className={cn(
+                          "app-tag cursor-pointer transition-colors text-[12px] px-2.5 py-1",
+                          localScanStatusFilter === "all"
+                            ? "bg-accent text-white border-transparent"
+                            : "bg-surface-hover text-muted hover:text-secondary hover:bg-surface-active"
+                        )}
+                      >
+                        {t("install.scan.filterAll")} ({totalScanCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLocalScanStatusFilter("pending")}
+                        className={cn(
+                          "app-tag cursor-pointer transition-colors text-[12px] px-2.5 py-1",
+                          localScanStatusFilter === "pending"
+                            ? "bg-accent text-white border-transparent"
+                            : "bg-surface-hover text-muted hover:text-secondary hover:bg-surface-active"
+                        )}
+                      >
+                        {t("install.scan.filterPending")} ({pendingScanCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLocalScanStatusFilter("imported")}
+                        className={cn(
+                          "app-tag cursor-pointer transition-colors text-[12px] px-2.5 py-1",
+                          localScanStatusFilter === "imported"
+                            ? "bg-accent text-white border-transparent"
+                            : "bg-surface-hover text-muted hover:text-secondary hover:bg-surface-active"
+                        )}
+                      >
+                        {t("install.scan.filterImported")} ({importedScanCount})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-4 p-4">
               {scanLoading ? (
@@ -1312,7 +1592,28 @@ export function InstallSkills() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span className="text-[13px]">{t("install.scan.scanning")}</span>
                 </div>
-              ) : scanResult && scanGroups.length === 0 ? (
+              ) : !scanResult ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface-hover">
+                    <FolderSearch className="h-5 w-5 text-muted" />
+                  </div>
+                  <h3 className="mb-1 text-[13px] font-semibold text-tertiary">
+                    {t("install.scan.readyTitle")}
+                  </h3>
+                  <p className="text-[13px] text-muted mb-4 max-w-sm">
+                    {t("install.scan.readyHint")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={runScan}
+                    disabled={scanLoading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-accent-border bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-accent-light"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", scanLoading && "animate-spin")} />
+                    {t("install.scan.startScan")}
+                  </button>
+                </div>
+              ) : scanGroups.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface-hover">
                     <FolderSearch className="h-5 w-5 text-muted" />
@@ -1322,15 +1623,43 @@ export function InstallSkills() {
                   </h3>
                   <p className="text-[13px] text-muted">{t("install.scan.noResultsHint")}</p>
                 </div>
+              ) : filteredScanGroups.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface-hover">
+                    <Search className="h-5 w-5 text-muted" />
+                  </div>
+                  <h3 className="mb-1 text-[13px] font-semibold text-tertiary">
+                    {t("install.scan.noMatches")}
+                  </h3>
+                  <p className="text-[13px] text-muted mb-3">{t("install.scan.noMatchesHint")}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocalScanQuery("");
+                      setLocalScanStatusFilter("all");
+                      setSelectedLocalAgents(DEFAULT_SELECTED_LOCAL_AGENTS);
+                    }}
+                    className="app-button-secondary text-[12px] px-3 py-1.5"
+                  >
+                    {t("install.scan.clearFilters")}
+                  </button>
+                </div>
               ) : (
                 <>
                   <div className="app-panel-muted overflow-hidden">
-                    {scanGroups.map((group) => {
-                      const [primaryLocation, ...otherLocations] = group.locations;
+                    {filteredScanGroups.map((group, index) => {
+                      const groupKey = getDiscoveredGroupKey(group, index);
+                      const sortedLocations = [...group.locations].sort((a, b) => {
+                        const aMatch = selectedLocalAgents.includes(a.tool);
+                        const bMatch = selectedLocalAgents.includes(b.tool);
+                        if (aMatch === bMatch) return 0;
+                        return aMatch ? -1 : 1;
+                      });
+                      const [primaryLocation, ...otherLocations] = sortedLocations;
                       const primaryPath = primaryLocation?.found_path;
                       const isImporting = !!primaryPath && importingPaths.has(primaryPath);
-                      const isRenaming = group.name in renameEditing;
-                      const importName = renameEditing[group.name] ?? group.name;
+                      const isRenaming = groupKey in renameEditing || group.name in renameEditing;
+                      const importName = renameEditing[groupKey] ?? renameEditing[group.name] ?? group.name;
                       const foundDate = new Date(group.found_at).toLocaleDateString(undefined, {
                         year: "numeric",
                         month: "short",
@@ -1338,21 +1667,22 @@ export function InstallSkills() {
                       });
 
                       return (
-                        <article key={group.name} className="border-b border-border-subtle last:border-b-0">
+                        <article key={groupKey} className="border-b border-border-subtle last:border-b-0">
                           <div className="flex items-start justify-between gap-3 px-3 py-2">
                             <div className="min-w-0 flex-1 space-y-1.5">
                               <div className="flex min-w-0 items-center gap-2">
                                 {isRenaming ? (
                                   <input
                                     autoFocus
-                                    value={renameEditing[group.name]}
+                                    value={renameEditing[groupKey] ?? renameEditing[group.name] ?? group.name}
                                     onChange={(e) =>
-                                      setRenameEditing((prev) => ({ ...prev, [group.name]: e.target.value }))
+                                      setRenameEditing((prev) => ({ ...prev, [groupKey]: e.target.value }))
                                     }
                                     onBlur={() => {
-                                      if (!renameEditing[group.name]?.trim()) {
+                                      if (!renameEditing[groupKey]?.trim()) {
                                         setRenameEditing((prev) => {
                                           const next = { ...prev };
+                                          delete next[groupKey];
                                           delete next[group.name];
                                           return next;
                                         });
@@ -1362,6 +1692,7 @@ export function InstallSkills() {
                                       if (e.key === "Escape") {
                                         setRenameEditing((prev) => {
                                           const next = { ...prev };
+                                          delete next[groupKey];
                                           delete next[group.name];
                                           return next;
                                         });
@@ -1379,7 +1710,7 @@ export function InstallSkills() {
                                 {!group.imported && !isRenaming ? (
                                   <button
                                     onClick={() =>
-                                      setRenameEditing((prev) => ({ ...prev, [group.name]: group.name }))
+                                      setRenameEditing((prev) => ({ ...prev, [groupKey]: group.name }))
                                     }
                                     className="shrink-0 rounded-md p-0.5 text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
                                     title={t("install.scan.rename")}

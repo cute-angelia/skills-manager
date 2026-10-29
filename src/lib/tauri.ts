@@ -277,13 +277,15 @@ export const editSkill = (
   skillId: string,
   name: string | null,
   description: string,
-  body: string
+  body: string,
+  version?: string | null
 ) =>
   invoke<InstallLocalResult>("edit_skill", {
     skillId,
     name: name || null,
     description,
     body,
+    version: version || null,
   });
 
 export const revealSkillFolder = (skillId: string) =>
@@ -444,7 +446,8 @@ export const setSkillToolToggle = (
 
 // ── Scan ──
 
-export const scanLocalSkills = () => invoke<ScanResult>("scan_local_skills");
+export const scanLocalSkills = (selectedTools?: string[]) =>
+  invoke<ScanResult>("scan_local_skills", { selectedTools });
 
 export const importExistingSkill = (sourcePath: string, name?: string) =>
   invoke<void>("import_existing_skill", { sourcePath, name: name || null });

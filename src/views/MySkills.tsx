@@ -30,7 +30,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { cn } from "../utils";
@@ -57,6 +57,7 @@ import type {
 } from "../lib/tauri";
 import { getErrorMessage } from "../lib/error";
 import { normalizeSkillSearch, skillSearchMatches } from "../lib/skillSearch";
+import { recordAgentEnable } from "../lib/agentUsage";
 import {
   buildSourceGroups,
   getSkillSourceInfo,
@@ -144,6 +145,11 @@ function centralDirName(skill: ManagedSkill) {
   return skill.central_path.split(/[\\/]/).filter(Boolean).pop() || skill.name;
 }
 
+const canRefresh = (skill: ManagedSkill) =>
+  skill.source_type === "git" ||
+  skill.source_type === "skillssh" ||
+  ((skill.source_type === "local" || skill.source_type === "import") && !!skill.source_ref);
+
 /**
  * One row of the list: either a source header or a skill. Keeping them in one
  * array lets the grouped and ungrouped views share the same render path.
@@ -156,6 +162,8 @@ export function MySkills() {
   const [createSkillOpen, setCreateSkillOpen] = useState(false);
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterUpdates = searchParams.get("filter") === "updates";
   const {
     viewedPreset,
     tools,
@@ -287,13 +295,18 @@ export function MySkills() {
     channelFilters.size > 0 ||
     tagFilters.size > 0 ||
     sourceSelection.size > 0 ||
-    filterMode !== "all";
+    filterMode !== "all" ||
+    filterUpdates;
   const clearFilters = () => {
     setSearch("");
     setChannelFilters(new Set());
     setTagFilters(new Set());
     setSourceSelection(new Set());
     setFilterMode("all");
+    if (filterUpdates) {
+      searchParams.delete("filter");
+      setSearchParams(searchParams, { replace: true });
+    }
   };
 
   const skillDisplayNames = useMemo(() => {
@@ -336,6 +349,11 @@ export function MySkills() {
         if (!matchUntagged && !matchTag) return false;
       }
 
+      if (filterUpdates) {
+        const hasUpdate = skill.update_status === "update_available" && canRefresh(skill);
+        if (!hasUpdate) return false;
+      }
+
       if (!viewedPreset) return true;
 
       const enabledInPreset = skill.preset_ids.includes(viewedPreset.id);
@@ -376,7 +394,7 @@ export function MySkills() {
       sourceCandidates: candidates,
       preSelectionSourceGroups: groups,
     };
-  }, [skills, skillDisplayNames, search, channelFilters, tagFilters, sourceSelection, filterMode, viewedPreset, presetSkillOrder]);
+  }, [skills, skillDisplayNames, search, channelFilters, tagFilters, sourceSelection, filterMode, filterUpdates, viewedPreset, presetSkillOrder]);
 
   // Without a source selection the groups from above already describe
   // `filtered`; only a narrowing selection forces a rebuild. That rebuild must
@@ -570,6 +588,9 @@ export function MySkills() {
     setTogglingToolKey(toolKey);
     try {
       await api.setSkillToolToggle(selectedSkill.id, viewedPreset.id, toolKey, enabled);
+      if (enabled) {
+        recordAgentEnable(toolKey);
+      }
       const displayName = getToolDisplayName(toolKey, tools);
       toast.success(
         enabled
@@ -597,6 +618,7 @@ export function MySkills() {
       try {
         if (enabled) {
           await api.syncSkillToTool(skill.id, toolKey);
+          recordAgentEnable(toolKey);
           toast.success(t("mySkills.targetInstalled", { name: skill.name, agent: displayName }));
         } else {
           await api.unsyncSkillFromTool(skill.id, toolKey);
@@ -1138,11 +1160,6 @@ export function MySkills() {
     }
   };
 
-  const canRefresh = (skill: ManagedSkill) =>
-    skill.source_type === "git" ||
-    skill.source_type === "skillssh" ||
-    ((skill.source_type === "local" || skill.source_type === "import") && !!skill.source_ref);
-
   const anyRefreshableSelected = useMemo(
     () => skills.some((skill) => selectedIds.has(skill.id) && canRefresh(skill)),
     [skills, selectedIds]
@@ -1457,6 +1474,41 @@ export function MySkills() {
         )}
       </div>
 
+      {filterUpdates && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-[13px] text-amber-700 dark:text-amber-300">
+          <div className="flex items-center gap-2 min-w-0">
+            <ArrowUpCircle className="h-4 w-4 shrink-0 text-amber-500" />
+            <span className="font-medium">
+              {t("mySkills.showingUpdatesNotice", { count: availableUpdateCount })}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {availableUpdateCount > 0 && (
+              <button
+                type="button"
+                onClick={handleUpdateAvailableSkills}
+                disabled={batchUpdating}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1 text-[12px] font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+              >
+                {batchUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                {t("mySkills.updateActions.updateAvailable", { count: availableUpdateCount })}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                searchParams.delete("filter");
+                setSearchParams(searchParams, { replace: true });
+              }}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-300"
+            >
+              <X className="h-3.5 w-3.5" />
+              {t("mySkills.showAllSkills")}
+            </button>
+          </div>
+        </div>
+      )}
+
       {isMultiSelect && (
         <MultiSelectToolbar
           selectedCount={selectedIds.size}
@@ -1608,7 +1660,8 @@ export function MySkills() {
                 <div
                   className={cn(
                     "app-panel group relative flex flex-1 cursor-pointer flex-col shadow-card transition-all hover:-translate-y-px hover:border-border hover:shadow-card-hover",
-                    isMultiSelect && selectedIds.has(skill.id) && "ring-1 ring-accent border-accent/40"
+                    isMultiSelect && selectedIds.has(skill.id) && "ring-1 ring-accent border-accent/40",
+                    hasUpdate && "ring-2 ring-amber-500/80 shadow-md shadow-amber-500/15 border-amber-500/40 bg-amber-500/[0.03]"
                   )}
                   onClick={() =>
                     isMultiSelect ? toggleSelect(skill.id) : openSkillDetailById(skill.id)
@@ -1653,7 +1706,7 @@ export function MySkills() {
                       <button
                         onClick={(e) => { e.stopPropagation(); handleRefreshSkill(skill); }}
                         disabled={updatingSkillId === skill.id}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2 py-0.5 text-[11px] font-medium text-amber-600 outline-none transition-colors hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-semibold text-white outline-none transition-colors hover:bg-amber-600 shadow-sm disabled:opacity-50"
                         title={refreshLabel(skill)}
                       >
                         <RotateCcw className={cn("h-2.5 w-2.5", updatingSkillId === skill.id && "animate-spin")} />
@@ -1869,7 +1922,8 @@ export function MySkills() {
               <div
                 className={cn(
                   "app-panel group relative flex cursor-pointer items-center gap-3.5 rounded-xl border-transparent px-3.5 py-3 transition-all hover:border-border hover:bg-surface-hover",
-                  isMultiSelect && selectedIds.has(skill.id) && "ring-1 ring-accent border-accent/40"
+                  isMultiSelect && selectedIds.has(skill.id) && "ring-1 ring-accent border-accent/40",
+                  hasUpdate && "ring-1 ring-amber-500/70 border-amber-500/40 bg-amber-500/[0.04]"
                 )}
                 onClick={() =>
                   isMultiSelect ? toggleSelect(skill.id) : openSkillDetailById(skill.id)
@@ -1942,7 +1996,7 @@ export function MySkills() {
                     <button
                       onClick={(e) => { e.stopPropagation(); handleRefreshSkill(skill); }}
                       disabled={updatingSkillId === skill.id}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2 py-0.5 text-[11px] font-medium text-amber-600 outline-none transition-colors hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-semibold text-white outline-none transition-colors hover:bg-amber-600 shadow-sm disabled:opacity-50"
                       title={refreshLabel(skill)}
                     >
                       <RotateCcw className={cn("h-2.5 w-2.5", updatingSkillId === skill.id && "animate-spin")} />
@@ -2072,6 +2126,12 @@ export function MySkills() {
         toolToggles={toolToggles}
         togglingTool={togglingToolKey}
         onToggleTool={handleToggleSkillTool}
+        onToggleTarget={handleToggleSkillTarget}
+        pendingTargetKey={
+          togglingTarget && selectedSkill && togglingTarget.skillId === selectedSkill.id
+            ? togglingTarget.tool
+            : null
+        }
         projects={projects}
         onProjectsChanged={refreshProjects}
       />

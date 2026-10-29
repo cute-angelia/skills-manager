@@ -9,6 +9,7 @@ import {
   Pencil,
   Copy,
   Check,
+  Clock,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import { writeText as clipboardWriteText } from "@tauri-apps/plugin-clipboard-ma
 import { cn } from "../utils";
 import { useApp } from "../context/AppContext";
 import { EditSkillDialog } from "./EditSkillDialog";
+import { parseSkillContent } from "../lib/skillVersion";
 import {
   getSkillDocument,
   getSourceSkillDocument,
@@ -42,6 +44,8 @@ interface Props {
   toolToggles?: SkillToolToggle[] | null;
   togglingTool?: string | null;
   onToggleTool?: (tool: string, enabled: boolean) => void;
+  onToggleTarget?: (skill: ManagedSkill, tool: string, enabled: boolean) => void;
+  pendingTargetKey?: string | null;
   projects?: Project[];
   onProjectsChanged?: () => void;
 }
@@ -53,6 +57,8 @@ export function SkillDetailPanel({
   toolToggles,
   togglingTool,
   onToggleTool,
+  onToggleTarget,
+  pendingTargetKey,
   projects,
   onProjectsChanged,
 }: Props) {
@@ -76,6 +82,8 @@ export function SkillDetailPanel({
       toolToggles={toolToggles}
       togglingTool={togglingTool}
       onToggleTool={onToggleTool}
+      onToggleTarget={onToggleTarget}
+      pendingTargetKey={pendingTargetKey}
       projects={projects}
       onProjectsChanged={onProjectsChanged}
     />
@@ -89,6 +97,8 @@ function SkillDetailPanelContent({
   toolToggles,
   togglingTool,
   onToggleTool,
+  onToggleTarget,
+  pendingTargetKey,
   projects,
   onProjectsChanged,
 }: {
@@ -98,6 +108,8 @@ function SkillDetailPanelContent({
   toolToggles?: SkillToolToggle[] | null;
   togglingTool?: string | null;
   onToggleTool?: (tool: string, enabled: boolean) => void;
+  onToggleTarget?: (skill: ManagedSkill, tool: string, enabled: boolean) => void;
+  pendingTargetKey?: string | null;
   projects?: Project[];
   onProjectsChanged?: () => void;
 }) {
@@ -218,6 +230,13 @@ function SkillDetailPanelContent({
   ].filter((item) => Boolean(item.value));
 
   const activeDoc = doc?.skill_id === skill.id ? doc : null;
+  const parsedLocalDoc = activeDoc ? parseSkillContent(activeDoc.content) : null;
+  const displayVersion = parsedLocalDoc?.version || "1.0.0";
+  const displayUpdatedAt =
+    parsedLocalDoc?.updatedAt ||
+    (skill.updated_at
+      ? new Date(skill.updated_at).toLocaleString()
+      : null);
   const activeSourceDoc = sourceDoc?.skill_id === skill.id ? sourceDoc : null;
   const activeSourceDiff = sourceDiff?.skill_id === skill.id ? sourceDiff : null;
   const sourceDiffLoading =
@@ -273,10 +292,38 @@ function SkillDetailPanelContent({
   const meta = (
     <>
       <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
-        {tools && <SyncDots skill={skill} tools={tools} size="sm" includeOrphan />}
+        {tools && (
+          <SyncDots
+            skill={skill}
+            tools={tools}
+            size="sm"
+            includeOrphan
+            onToggle={
+              onToggleTarget
+                ? (tool, enabled) => onToggleTarget(skill, tool, enabled)
+                : undefined
+            }
+            pendingKey={pendingTargetKey}
+          />
+        )}
+        <span
+          className="inline-flex items-center rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-mono font-medium text-accent border border-accent/20"
+          title={t("mySkills.version")}
+        >
+          v{displayVersion}
+        </span>
+        {displayUpdatedAt && (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] text-muted"
+            title={t("mySkills.updatedAt")}
+          >
+            <Clock className="h-3 w-3" />
+            <span>{displayUpdatedAt}</span>
+          </span>
+        )}
         {skill.tags.length > 0 && (
           <>
-            {tools && <span className="mx-0.5 h-3 w-px bg-border-subtle" />}
+            <span className="mx-0.5 h-3 w-px bg-border-subtle" />
             {skill.tags.map((tag) => (
               <span
                 key={tag}
@@ -471,7 +518,9 @@ function SkillDetailPanelContent({
             if (requestId === localRequestIdRef.current) {
               setDoc(nextDoc);
             }
-          } catch {}
+          } catch {
+            // Silently ignore document reload failure
+          }
           await refreshManagedSkills();
           onProjectsChanged?.();
         }}

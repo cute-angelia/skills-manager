@@ -250,3 +250,21 @@ export function buildSourceGroups(skills: ManagedSkill[]): SkillSourceGroup[] {
     );
   });
 }
+
+/**
+ * Returns a unique and stable React key for a discovered skill group.
+ * Groups can have identical names if their content fingerprint or source path differs.
+ */
+export function getDiscoveredGroupKey(
+  group: { name: string; fingerprint?: string | null; locations?: { found_path: string }[] },
+  fallbackIndex?: number
+): string {
+  if (group.fingerprint) {
+    return `fp:${group.name}:${group.fingerprint}`;
+  }
+  const primaryPath = group.locations?.[0]?.found_path;
+  if (primaryPath) {
+    return `path:${group.name}:${primaryPath}`;
+  }
+  return `idx:${group.name}:${fallbackIndex ?? 0}`;
+}

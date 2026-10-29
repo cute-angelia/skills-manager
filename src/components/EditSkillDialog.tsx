@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { editSkill, getSkillDocument, revealSkillFolder } from "../lib/tauri";
 import type { ManagedSkill, SkillDocument } from "../lib/tauri";
 import { getErrorMessage } from "../lib/error";
+import { bumpVersion, parseSkillContent } from "../lib/skillVersion";
 import { SkillMarkdown } from "./SkillMarkdown";
 import { cn } from "../utils";
 
@@ -20,49 +21,6 @@ interface Props {
   initialDoc?: SkillDocument | null;
   onClose: () => void;
   onSaved: (updatedName?: string) => Promise<void>;
-}
-
-export function parseSkillContent(
-  raw: string,
-  defaultName = "",
-  defaultDesc = "",
-) {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("---")) {
-    return { name: defaultName, description: defaultDesc, body: raw };
-  }
-  const afterFirst = trimmed.slice(3);
-  const closingIndex = afterFirst.indexOf("---");
-  if (closingIndex === -1) {
-    return { name: defaultName, description: defaultDesc, body: raw };
-  }
-  const yamlStr = afterFirst.slice(0, closingIndex);
-  const body = afterFirst.slice(closingIndex + 3).replace(/^\r?\n/, "");
-
-  let name = defaultName;
-  let description = defaultDesc;
-
-  const nameMatch = yamlStr.match(/^name:\s*(.+)$/m);
-  if (nameMatch) {
-    name = nameMatch[1].trim().replace(/^['"]|['"]$/g, "");
-  }
-
-  const descMatch = yamlStr.match(
-    /^description:\s*(?:[|>-]\s*\n([\s\S]*?)(?=\n\S|\n*$)|(.+)$)/m,
-  );
-  if (descMatch) {
-    if (descMatch[1]) {
-      description = descMatch[1]
-        .split("\n")
-        .map((l) => l.replace(/^\s{2}/, ""))
-        .join("\n")
-        .trim();
-    } else if (descMatch[2]) {
-      description = descMatch[2].trim().replace(/^['"]|['"]$/g, "");
-    }
-  }
-
-  return { name, description, body };
 }
 
 export function EditSkillDialog({ skill, initialDoc, onClose, onSaved }: Props) {
@@ -77,6 +35,8 @@ export function EditSkillDialog({ skill, initialDoc, onClose, onSaved }: Props) 
   const [description, setDescription] = useState(
     parsed.description || skill.description || "",
   );
+  const [version, setVersion] = useState(parsed.version || "1.0.0");
+  const initialVersionRef = useRef(parsed.version || "1.0.0");
   const [body, setBody] = useState(parsed.body);
   const [preview, setPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +57,10 @@ export function EditSkillDialog({ skill, initialDoc, onClose, onSaved }: Props) 
           );
           if (p.name) setName(p.name);
           if (p.description) setDescription(p.description);
+          if (p.version) {
+            setVersion(p.version);
+            initialVersionRef.current = p.version;
+          }
           setBody(p.body);
         })
         .catch(() => {});
@@ -160,6 +124,7 @@ export function EditSkillDialog({ skill, initialDoc, onClose, onSaved }: Props) 
     event.preventDefault();
     if (submitting.current) return;
     const identifier = name.trim();
+    const versionValue = version.trim();
     let validation: string | null = null;
     if (
       !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(identifier) ||
@@ -167,6 +132,7 @@ export function EditSkillDialog({ skill, initialDoc, onClose, onSaved }: Props) 
     )
       validation = "invalidName";
     else if (!description.trim()) validation = "requiredDescription";
+    else if (!versionValue) validation = "requiredVersion";
     else if (!body.trim()) validation = "requiredBody";
     else if (body.trim().split(/\r?\n/, 1)[0].trimEnd() === "---")
       validation = "frontmatter";
@@ -179,7 +145,17 @@ export function EditSkillDialog({ skill, initialDoc, onClose, onSaved }: Props) 
     setBusy(true);
     setError(null);
     try {
-      await editSkill(skill.id, identifier, description.trim(), body.trim());
+      const finalVersion =
+        versionValue === initialVersionRef.current.trim()
+          ? bumpVersion(versionValue)
+          : versionValue;
+      await editSkill(
+        skill.id,
+        identifier,
+        description.trim(),
+        body.trim(),
+        finalVersion,
+      );
       toast.success(t("editSkill.success"));
       await onSaved(identifier);
       onClose();
@@ -258,26 +234,49 @@ export function EditSkillDialog({ skill, initialDoc, onClose, onSaved }: Props) 
         >
           <div className="min-h-0 overflow-y-auto px-5 py-4">
             <fieldset disabled={busy} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="edit-skill-name"
-                  className="mb-1.5 block text-[13px] font-medium text-secondary"
-                >
-                  {t("editSkill.name")}
-                </label>
-                <input
-                  id="edit-skill-name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  maxLength={64}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className="app-input w-full font-mono"
-                />
-                <p className="mt-1 text-[12px] text-muted">
-                  {t("editSkill.nameHint")}
-                </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="sm:col-span-2">
+                  <label
+                    htmlFor="edit-skill-name"
+                    className="mb-1.5 block text-[13px] font-medium text-secondary"
+                  >
+                    {t("editSkill.name")}
+                  </label>
+                  <input
+                    id="edit-skill-name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={64}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="app-input w-full font-mono"
+                  />
+                  <p className="mt-1 text-[12px] text-muted">
+                    {t("editSkill.nameHint")}
+                  </p>
+                </div>
+                <div>
+                  <label
+                    htmlFor="edit-skill-version"
+                    className="mb-1.5 block text-[13px] font-medium text-secondary"
+                  >
+                    {t("editSkill.version")}
+                  </label>
+                  <input
+                    id="edit-skill-version"
+                    value={version}
+                    onChange={(event) => setVersion(event.target.value)}
+                    placeholder="1.0.0"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="app-input w-full font-mono"
+                  />
+                  <p className="mt-1 text-[12px] text-muted">
+                    {t("editSkill.versionHint")}
+                  </p>
+                </div>
               </div>
               <div>
                 <label

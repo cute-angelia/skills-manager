@@ -5,6 +5,7 @@ import type { ManagedSkill, ToolInfo } from "../lib/tauri";
 import { cn } from "../utils";
 import { AgentIcon } from "./AgentIcon";
 import { hasAgentIcon } from "../lib/agentIcons";
+import { useAgentEnableCounts, sortToolsByUsage } from "../lib/agentUsage";
 
 function shortLabel(displayName: string, key: string): string {
   const words = displayName.trim().split(/\s+/).filter(Boolean);
@@ -56,8 +57,12 @@ export function SyncDots({
 }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [enableCounts] = useAgentEnableCounts();
   const syncedKeys = new Set(skill.targets.map((t) => t.tool));
-  const activeTools = tools.filter((t) => t.installed && t.enabled);
+  const activeTools = sortToolsByUsage(
+    tools.filter((t) => t.installed && t.enabled),
+    enableCounts
+  );
   const activeKeys = new Set(activeTools.map((t) => t.key));
 
   const dots: Dot[] = activeTools.map((tool) => ({

@@ -275,10 +275,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           label: i18n.t("mySkills.viewUpdates"),
           onClick: () => {
             setDetailSkillId(null);
-            if (!window.location.pathname.endsWith("/my-skills")) {
-              window.history.pushState(null, "", "/my-skills");
-              window.dispatchEvent(new PopStateEvent("popstate"));
-            }
+            const targetUrl = "/my-skills?filter=updates";
+            window.history.pushState(null, "", targetUrl);
+            window.dispatchEvent(new PopStateEvent("popstate"));
           },
         },
       }

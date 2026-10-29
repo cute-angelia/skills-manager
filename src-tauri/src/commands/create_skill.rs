@@ -46,6 +46,7 @@ pub async fn edit_skill(
     name: Option<String>,
     description: String,
     body: String,
+    version: Option<String>,
     store: State<'_, Arc<SkillStore>>,
 ) -> Result<CreatedSkill, AppError> {
     let store = store.inner().clone();
@@ -57,6 +58,7 @@ pub async fn edit_skill(
             name.as_deref(),
             &description,
             &body,
+            version.as_deref(),
         )
         .map_err(|error| {
             let message = format!("{error:#}");

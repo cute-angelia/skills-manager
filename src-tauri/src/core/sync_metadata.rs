@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -90,6 +90,169 @@ pub fn metadata_exists() -> bool {
 
 pub fn has_complete_skill_snapshot() -> bool {
     metadata_dir().join("schema.json").is_file() && metadata_dir().join("skills").is_dir()
+}
+
+fn untracked_central_skill_dirs(store: &SkillStore) -> Result<Vec<PathBuf>> {
+    let root = central_repo::skills_dir();
+    let entries = match fs::read_dir(&root) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err.into()),
+    };
+    let known_paths: HashSet<PathBuf> = store
+        .get_all_skills()?
+        .into_iter()
+        .map(|skill| {
+            let path = PathBuf::from(skill.central_path);
+            path.canonicalize().unwrap_or(path)
+        })
+        .collect();
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        // In particular, never adopt an installer's .name.staged-* tree or
+        // follow a symlink into an external tool/project directory.
+        if name.starts_with('.') || name == "node_modules" || !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if !known_paths.contains(&canonical) && skill_metadata::is_valid_skill_dir(&path) {
+            candidates.push(path);
+        }
+    }
+    candidates.sort();
+    Ok(candidates)
+}
+
+/// Adopt real skill directories already in the library, without copying or
+/// deploying them. Existing records and metadata remain authoritative.
+pub fn register_untracked_central_skills(store: &SkillStore) -> Result<usize> {
+    // Repeated scans usually have nothing to do: do not contend with installs
+    // or rewrite/fsync metadata on that common path.
+    if untracked_central_skill_dirs(store)?.is_empty() {
+        return Ok(0);
+    }
+    let _lock = RepoLock::acquire_foreground("register central skill directories")?;
+    let mut known_keys: HashSet<String> = store
+        .get_all_skills()?
+        .iter()
+        .filter_map(|skill| relative_skill_path(&skill.central_path).ok())
+        .map(|path| path_key(&path))
+        .collect();
+    let mut persisted_by_key = HashMap::new();
+    if metadata_exists() {
+        if !has_complete_skill_snapshot() {
+            bail!("incomplete sync metadata snapshot: missing schema.json or skills directory");
+        }
+        let metadata = read_skill_files()?;
+        ensure_unique_path_keys(&metadata)?;
+        persisted_by_key.extend(
+            metadata
+                .into_iter()
+                .map(|meta| (meta.path_key.clone(), meta)),
+        );
+    }
+    let candidates: Vec<PathBuf> = untracked_central_skill_dirs(store)?
+        .into_iter()
+        .filter(|path| {
+            relative_skill_path(&path.to_string_lossy())
+                .map(|relative| !known_keys.contains(&path_key(&relative)))
+                .unwrap_or(false)
+        })
+        .collect();
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    super::file_watcher::mute_self_writes(&metadata_dir());
+    if persisted_by_key.is_empty() {
+        // Bootstrap the entire DB snapshot before adding a single record;
+        // otherwise the next reindex could drop pre-existing DB-only skills.
+        write_all_from_db_unlocked(store)?;
+    }
+    let mut registered = 0;
+    for path in candidates {
+        let key = path_key(&relative_skill_path(&path.to_string_lossy())?);
+        if known_keys.contains(&key) {
+            continue;
+        }
+        if !path.symlink_metadata()?.file_type().is_dir()
+            || !skill_metadata::is_valid_skill_dir(&path)
+        {
+            continue;
+        }
+        let persisted = persisted_by_key.get(&key);
+        if let Some(meta) = persisted {
+            let recorded_path = central_repo::skills_dir().join(&meta.path);
+            if recorded_path.canonicalize().ok() != path.canonicalize().ok()
+                || store.get_skill_by_id(&meta.skill_id)?.is_some()
+            {
+                continue;
+            }
+        }
+        let parsed = skill_metadata::parse_skill_md(&path);
+        let now = chrono::Utc::now().timestamp_millis();
+        let source_type = persisted
+            .map(|meta| meta.source.source_type.as_str())
+            .unwrap_or("local");
+        let record = SkillRecord {
+            id: persisted
+                .map(|meta| meta.skill_id.clone())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            name: parsed
+                .name
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| skill_metadata::infer_skill_name(&path)),
+            description: parsed.description,
+            source_type: source_type.into(),
+            source_ref: persisted.and_then(|meta| meta.source.ref_.clone()),
+            source_ref_resolved: None,
+            source_subpath: persisted.and_then(|meta| meta.source.subpath.clone()),
+            source_branch: persisted.and_then(|meta| meta.source.branch.clone()),
+            source_revision: None,
+            remote_revision: None,
+            central_path: path.to_string_lossy().to_string(),
+            content_hash: Some(super::content_hash::hash_directory(&path)?),
+            enabled: persisted.map(|meta| meta.enabled).unwrap_or(true),
+            created_at: now,
+            updated_at: now,
+            status: "ok".into(),
+            update_status: if matches!(source_type, "local" | "import") {
+                "local_only"
+            } else {
+                "unknown"
+            }
+            .into(),
+            last_checked_at: None,
+            last_check_error: None,
+        };
+        // Persist first so a crash cannot leave an unbacked DB row that the
+        // next metadata reindex removes. No installer or target sync is run.
+        if persisted.is_none() {
+            write_skill_file(&record, &[])?;
+        }
+        let tags = persisted.map(|meta| meta.tags.as_slice()).unwrap_or(&[]);
+        if let Err(err) = store
+            .insert_skill(&record)
+            .and_then(|()| store.set_tags_for_skill(&record.id, tags))
+        {
+            let _ = store.delete_skill(&record.id);
+            if persisted.is_none() {
+                let _ = fs::remove_file(
+                    metadata_dir()
+                        .join("skills")
+                        .join(format!("{}.json", record.id)),
+                );
+            }
+            return Err(err);
+        }
+        known_keys.insert(key);
+        registered += 1;
+    }
+    Ok(registered)
 }
 
 #[allow(dead_code)]
@@ -698,7 +861,7 @@ mod tests {
     use super::*;
     use crate::core::{central_repo, skill_store::SkillStore};
     use std::sync::MutexGuard;
-    use tempfile::{TempDir, tempdir};
+    use tempfile::{tempdir, TempDir};
 
     struct TestRepo {
         _lock: MutexGuard<'static, ()>,
@@ -755,6 +918,188 @@ mod tests {
             last_checked_at: None,
             last_check_error: None,
         }
+    }
+
+    #[test]
+    fn central_registration_persists_in_place_without_deploying() {
+        let repo = test_repo();
+        let dir = write_skill_dir("x-daily-plan");
+        let original = fs::read(dir.join("SKILL.md")).unwrap();
+        fs::write(dir.join("notes.txt"), "keep local content").unwrap();
+        let nested = dir.join("examples/nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("SKILL.md"), "# example, not another skill").unwrap();
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+        let skills = repo.store.get_all_skills().unwrap();
+        assert_eq!(skills.len(), 1);
+        let skill = &skills[0];
+        assert_eq!(skill.name, "x-daily-plan");
+        assert_eq!(Path::new(&skill.central_path), dir);
+        assert_eq!(skill.source_type, "local");
+        assert_eq!(skill.update_status, "local_only");
+        assert!(skill.content_hash.is_some());
+        assert_eq!(fs::read(dir.join("SKILL.md")).unwrap(), original);
+        assert_eq!(
+            fs::read_to_string(dir.join("notes.txt")).unwrap(),
+            "keep local content"
+        );
+        assert!(!central_repo::skills_dir().join("x-daily-plan-2").exists());
+        assert!(repo.store.get_all_targets().unwrap().is_empty());
+        assert!(repo.store.get_all_scenarios().unwrap().is_empty());
+        assert!(metadata_dir()
+            .join(format!("skills/{}.json", skill.id))
+            .is_file());
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 0);
+        reindex_from_metadata(&repo.store).unwrap();
+        assert_eq!(repo.store.get_all_skills().unwrap()[0].id, skill.id);
+    }
+
+    #[test]
+    fn central_registration_preserves_existing_records_and_metadata() {
+        let repo = test_repo();
+        let dir = write_skill_dir("existing");
+        let mut record = sample_skill("known-id", &dir);
+        record.enabled = false;
+        record.source_type = "git".into();
+        record.source_ref = Some("https://example.invalid/owner/repo".into());
+        record.source_revision = Some("keep-revision".into());
+        repo.store.insert_skill(&record).unwrap();
+        repo.store
+            .set_tags_for_skill(&record.id, &["keep-tag".into()])
+            .unwrap();
+        write_all_from_db_unlocked(&repo.store).unwrap();
+        let metadata_path = metadata_dir().join("skills/known-id.json");
+        let original_metadata = fs::read(&metadata_path).unwrap();
+        write_skill_dir("new-skill");
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+        let existing = repo.store.get_skill_by_id(&record.id).unwrap().unwrap();
+        assert!(!existing.enabled);
+        assert_eq!(existing.source_ref, record.source_ref);
+        assert_eq!(existing.source_revision, record.source_revision);
+        assert_eq!(existing.created_at, record.created_at);
+        assert_eq!(existing.updated_at, record.updated_at);
+        assert_eq!(fs::read(&metadata_path).unwrap(), original_metadata);
+        assert_eq!(
+            repo.store.get_tags_map().unwrap()[&record.id],
+            vec!["keep-tag"]
+        );
+        assert!(repo.store.get_all_targets().unwrap().is_empty());
+    }
+
+    #[test]
+    fn central_registration_ignores_internal_and_invalid_directories() {
+        let repo = test_repo();
+        for name in [".staged-test", ".git", ".skills-manager", "node_modules"] {
+            write_skill_dir(name);
+        }
+        let invalid = central_repo::skills_dir().join("no-marker");
+        fs::create_dir_all(&invalid).unwrap();
+        fs::write(invalid.join("README.md"), "not a skill").unwrap();
+        let lower = central_repo::skills_dir().join("lowercase");
+        fs::create_dir_all(&lower).unwrap();
+        fs::write(lower.join("skill.md"), "---\nname: lowercase\n---\n").unwrap();
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+        assert_eq!(repo.store.get_all_skills().unwrap()[0].name, "lowercase");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn central_registration_does_not_follow_symlinks_outside_the_library() {
+        let repo = test_repo();
+        let external = repo._tmp.path().join("external-skill");
+        fs::create_dir_all(&external).unwrap();
+        fs::write(external.join("SKILL.md"), "---\nname: external\n---\n").unwrap();
+        std::os::unix::fs::symlink(&external, central_repo::skills_dir().join("external-link"))
+            .unwrap();
+        let dir = write_skill_dir("local-skill");
+        std::os::unix::fs::symlink(&dir, central_repo::skills_dir().join("alias")).unwrap();
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+        assert_eq!(repo.store.get_all_skills().unwrap()[0].name, "local-skill");
+        assert!(external.join("SKILL.md").is_file());
+    }
+
+    #[test]
+    fn central_registration_does_not_duplicate_persisted_metadata() {
+        let repo = test_repo();
+        let dir = write_skill_dir("metadata-only");
+        let existing = sample_skill("persisted-id", &dir);
+        write_schema().unwrap();
+        write_skill_file(&existing, &[]).unwrap();
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+        assert_eq!(read_skill_files().unwrap().len(), 1);
+        assert_eq!(repo.store.get_all_skills().unwrap()[0].id, existing.id);
+        reindex_from_metadata(&repo.store).unwrap();
+        assert_eq!(repo.store.get_all_skills().unwrap()[0].id, existing.id);
+    }
+
+    #[test]
+    fn central_registration_does_not_leave_a_row_when_metadata_write_fails() {
+        let repo = test_repo();
+        let dir = write_skill_dir("new-skill");
+        fs::create_dir_all(metadata_dir()).unwrap();
+        fs::write(metadata_dir().join("skills"), "blocks metadata directory").unwrap();
+
+        assert!(register_untracked_central_skills(&repo.store).is_err());
+        assert!(repo.store.get_all_skills().unwrap().is_empty());
+        assert!(dir.join("SKILL.md").is_file());
+    }
+
+    #[test]
+    fn central_registration_avoids_folded_path_collisions_in_the_same_batch() {
+        let repo = test_repo();
+        write_skill_dir("stra\u{df}e");
+        write_skill_dir("strasse");
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+        assert_eq!(read_skill_files().unwrap().len(), 1);
+        reindex_from_metadata(&repo.store).unwrap();
+    }
+
+    #[test]
+    fn central_registration_bootstraps_existing_db_only_records() {
+        let repo = test_repo();
+        let dir = write_skill_dir("existing");
+        repo.store
+            .insert_skill(&sample_skill("existing-id", &dir))
+            .unwrap();
+        write_skill_dir("new-skill");
+
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+        reindex_from_metadata(&repo.store).unwrap();
+        assert_eq!(repo.store.get_all_skills().unwrap().len(), 2);
+        assert!(repo.store.get_skill_by_id("existing-id").unwrap().is_some());
+    }
+
+    #[test]
+    fn central_registration_retries_after_marker_creation() {
+        let repo = test_repo();
+        let dir = central_repo::skills_dir().join("new-skill");
+        fs::create_dir_all(&dir).unwrap();
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 0);
+        assert!(!metadata_exists());
+        fs::write(dir.join("SKILL.md"), "---\nname: new-skill\n---\n").unwrap();
+        assert!(repo.store.get_all_skills().unwrap().is_empty());
+        assert_eq!(register_untracked_central_skills(&repo.store).unwrap(), 1);
+    }
+
+    #[test]
+    fn central_registration_serializes_concurrent_scans() {
+        let repo = test_repo();
+        write_skill_dir("new-skill");
+        let counts = std::thread::scope(|scope| {
+            let first = scope.spawn(|| register_untracked_central_skills(&repo.store).unwrap());
+            let second = scope.spawn(|| register_untracked_central_skills(&repo.store).unwrap());
+            (first.join().unwrap(), second.join().unwrap())
+        });
+        assert_eq!(counts.0 + counts.1, 1);
+        assert_eq!(repo.store.get_all_skills().unwrap().len(), 1);
+        assert_eq!(read_skill_files().unwrap().len(), 1);
     }
 
     /// The single-member write must produce the file a full write would.
@@ -875,8 +1220,7 @@ mod tests {
 
         let mut record = sample_skill("skill-stable", &skill_dir);
         record.updated_at = 1_000_000;
-        record.content_hash =
-            Some(super::super::content_hash::hash_directory(&skill_dir).unwrap());
+        record.content_hash = Some(super::super::content_hash::hash_directory(&skill_dir).unwrap());
         repo.store.insert_skill(&record).unwrap();
         write_all_from_db_unlocked(&repo.store).unwrap();
 

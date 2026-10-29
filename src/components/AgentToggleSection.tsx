@@ -163,7 +163,7 @@ function AgentToggle({
           e.stopPropagation();
           onEditAgent(item);
         }}
-        className="shrink-0 rounded p-1 text-muted hover:text-accent hover:bg-surface outline-none opacity-40 transition-opacity group-hover:opacity-100 focus:opacity-100"
+        className="shrink-0 rounded-md p-1 text-muted hover:text-accent hover:bg-surface outline-none opacity-40 transition-opacity group-hover:opacity-100 focus:opacity-100"
         title="编辑配置"
       >
         <Pencil className="h-3 w-3" />

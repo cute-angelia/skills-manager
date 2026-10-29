@@ -4,7 +4,8 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::core::{
-    error::AppError, installer, scanner, skill_store::SkillStore, sync_metadata, tool_adapters,
+    central_repo, error::AppError, installer, scanner, skill_store::SkillStore, sync_metadata,
+    tool_adapters,
 };
 
 fn canonicalize_lossy(path: &str) -> PathBuf {
@@ -17,7 +18,8 @@ fn match_imported_skill_id(
 ) -> Option<String> {
     let found_path = canonicalize_lossy(&rec.found_path);
     if let Some(existing) = managed_skills.iter().find(|skill| {
-        skill.source_ref.as_deref().map(canonicalize_lossy).as_ref() == Some(&found_path)
+        canonicalize_lossy(&skill.central_path) == found_path
+            || skill.source_ref.as_deref().map(canonicalize_lossy).as_ref() == Some(&found_path)
             || skill
                 .source_ref_resolved
                 .as_deref()
@@ -50,17 +52,47 @@ pub struct ScanResultDto {
 #[tauri::command]
 pub async fn scan_local_skills(
     store: State<'_, Arc<SkillStore>>,
+    selected_tools: Option<Vec<String>>,
 ) -> Result<ScanResultDto, AppError> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        sync_metadata::register_untracked_central_skills(&store).map_err(AppError::io)?;
         let all_targets = store.get_all_targets().map_err(AppError::db)?;
         let managed_paths: Vec<String> =
             all_targets.iter().map(|t| t.target_path.clone()).collect();
         let managed_skills = store.get_all_skills().map_err(AppError::db)?;
 
-        let adapters = tool_adapters::all_tool_adapters(&store);
+        let mut adapters = tool_adapters::all_tool_adapters(&store);
+        if let Some(selected) = selected_tools.as_ref() {
+            if !selected.is_empty() {
+                adapters.retain(|adapter| selected.contains(&adapter.key));
+            }
+        }
         let mut plan = scanner::scan_local_skills_with_adapters(&managed_paths, &adapters)
             .map_err(AppError::io)?;
+
+        // The library is a source too. These entries are already registered
+        // in place, so the UI must not offer to copy them onto themselves.
+        let root = central_repo::skills_dir();
+        for skill in &managed_skills {
+            let path = std::path::Path::new(&skill.central_path);
+            if path.parent() == Some(root.as_path())
+                && crate::core::skill_metadata::is_valid_skill_dir(path)
+            {
+                plan.discovered
+                    .push(crate::core::skill_store::DiscoveredSkillRecord {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        tool: "Skills Manager".to_string(),
+                        found_path: skill.central_path.clone(),
+                        name_guess: Some(skill.name.clone()),
+                        fingerprint: skill.content_hash.clone(),
+                        found_at: skill.created_at,
+                        imported_skill_id: Some(skill.id.clone()),
+                    });
+            }
+        }
+        plan.tools_scanned += usize::from(root.is_dir());
+        plan.skills_found = plan.discovered.len();
 
         for rec in &mut plan.discovered {
             rec.imported_skill_id = match_imported_skill_id(rec, &managed_skills);
@@ -300,6 +332,16 @@ mod tests {
         assert_eq!(
             match_imported_skill_id(&rec, &managed),
             Some("skill-1".to_string())
+        );
+    }
+
+    #[test]
+    fn marks_existing_central_path_as_imported_without_a_source_reference() {
+        let rec = discovered("/central/local-skill", "local-skill", None);
+        let managed = vec![managed_skill("central-id", "local-skill", None, None, None)];
+        assert_eq!(
+            match_imported_skill_id(&rec, &managed),
+            Some("central-id".into())
         );
     }
 }

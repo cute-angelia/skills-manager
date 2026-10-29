@@ -1,8 +1,11 @@
 use std::path::Path;
 
+#[derive(Debug, Clone, Default)]
 pub struct SkillMeta {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub version: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 fn read_named_file_exact(dir: &Path, target_name: &str) -> Option<String> {
@@ -41,6 +44,8 @@ fn parse_skill_md_with_candidates(dir: &Path, candidates: &[&str]) -> SkillMeta 
     SkillMeta {
         name: None,
         description: None,
+        version: None,
+        updated_at: None,
     }
 }
 
@@ -50,6 +55,8 @@ fn parse_frontmatter(content: &str) -> SkillMeta {
         return SkillMeta {
             name: None,
             description: None,
+            version: None,
+            updated_at: None,
         };
     }
 
@@ -59,20 +66,146 @@ fn parse_frontmatter(content: &str) -> SkillMeta {
         if let Ok(yaml) = serde_yaml::from_str::<serde_yaml::Value>(yaml_str) {
             let name = yaml
                 .get("name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .and_then(|v| match v {
+                    serde_yaml::Value::String(s) => Some(s.clone()),
+                    _ => None,
+                });
             let description = yaml
                 .get("description")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            return SkillMeta { name, description };
+                .and_then(|v| match v {
+                    serde_yaml::Value::String(s) => Some(s.clone()),
+                    _ => None,
+                });
+            let version = yaml
+                .get("version")
+                .and_then(|v| match v {
+                    serde_yaml::Value::String(s) => Some(s.clone()),
+                    serde_yaml::Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                });
+            let updated_at = yaml
+                .get("updated_at")
+                .and_then(|v| match v {
+                    serde_yaml::Value::String(s) => Some(s.clone()),
+                    serde_yaml::Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                });
+            return SkillMeta {
+                name,
+                description,
+                version,
+                updated_at,
+            };
         }
     }
 
     SkillMeta {
         name: None,
         description: None,
+        version: None,
+        updated_at: None,
     }
+}
+
+/// Increments version according to the rule:
+/// Format is `X.Y.Z` (major.minor.patch).
+/// Increments Z (patch). If Z > 99, Z resets to 0 and Y (minor) increments.
+/// If Y > 99, Y resets to 0 and X (major) increments.
+pub fn bump_version(current: &str) -> String {
+    let cleaned = current.trim().trim_start_matches(|c| c == 'v' || c == 'V');
+    let parts: Vec<&str> = cleaned.split('.').collect();
+
+    let mut major: u64 = parts.get(0).and_then(|s| s.parse().ok()).unwrap_or(1);
+    let mut minor: u64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let mut patch: u64 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+    patch += 1;
+    if patch > 99 {
+        patch = 0;
+        minor += 1;
+        if minor > 99 {
+            minor = 0;
+            major += 1;
+        }
+    }
+
+    format!("{major}.{minor}.{patch}")
+}
+
+/// Ensure destination skill has `version` and `updated_at` in its frontmatter.
+/// Default values if missing: version = "1.0.0", updated_at = current local time.
+pub fn ensure_skill_frontmatter_metadata(dir: &Path) -> anyhow::Result<()> {
+    let candidate = if dir.join("SKILL.md").is_file() {
+        dir.join("SKILL.md")
+    } else if dir.join("skill.md").is_file() {
+        dir.join("skill.md")
+    } else {
+        return Ok(());
+    };
+
+    let content = match std::fs::read_to_string(&candidate) {
+        Ok(c) => c,
+        Err(_) => return Ok(()),
+    };
+
+    let trimmed = content.trim_start();
+    let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    if trimmed.starts_with("---") {
+        let rest = &trimmed[3..];
+        if let Some(end) = rest.find("---") {
+            let yaml_str = &rest[..end];
+            let body = rest[end + 3..].trim_start_matches("\r\n").trim_start_matches('\n');
+            let mut val: serde_yaml::Value = serde_yaml::from_str(yaml_str).unwrap_or(serde_yaml::Value::Mapping(Default::default()));
+
+            if let serde_yaml::Value::Mapping(ref mut map) = val {
+                let ver_key = serde_yaml::Value::String("version".to_string());
+                let upd_key = serde_yaml::Value::String("updated_at".to_string());
+
+                let mut modified = false;
+                let need_ver = !map.contains_key(&ver_key)
+                    || map.get(&ver_key).map_or(true, |v| {
+                        match v {
+                            serde_yaml::Value::String(s) => s.trim().is_empty(),
+                            serde_yaml::Value::Null => true,
+                            _ => false,
+                        }
+                    });
+                if need_ver {
+                    map.insert(ver_key, serde_yaml::Value::String("1.0.0".to_string()));
+                    modified = true;
+                }
+
+                let need_upd = !map.contains_key(&upd_key)
+                    || map.get(&upd_key).map_or(true, |v| {
+                        match v {
+                            serde_yaml::Value::String(s) => s.trim().is_empty(),
+                            serde_yaml::Value::Null => true,
+                            _ => false,
+                        }
+                    });
+                if need_upd {
+                    map.insert(upd_key, serde_yaml::Value::String(now_str));
+                    modified = true;
+                }
+
+                if modified {
+                    let new_yaml = serde_yaml::to_string(&val)?;
+                    let new_content = format!("---\n{new_yaml}---\n\n{body}\n");
+                    std::fs::write(&candidate, new_content)?;
+                }
+            }
+            return Ok(());
+        }
+    }
+
+    // No frontmatter found, create a minimal one
+    let name = infer_skill_name(dir);
+    let new_content = format!(
+        "---\nname: {name}\ndescription: ''\nversion: '1.0.0'\nupdated_at: '{now_str}'\n---\n\n{content}\n"
+    );
+    std::fs::write(&candidate, new_content)?;
+    Ok(())
 }
 
 /// Skill directory marker files used across the application.
@@ -429,5 +562,72 @@ mod tests {
         fs::create_dir_all(&skill_dir).unwrap();
 
         assert_eq!(infer_skill_name(&skill_dir), "my-cool-skill");
+    }
+
+    // ── bump_version ──
+
+    #[test]
+    fn bump_version_basic() {
+        assert_eq!(bump_version("1.0.0"), "1.0.1");
+        assert_eq!(bump_version("1.0.1"), "1.0.2");
+        assert_eq!(bump_version("1.0.98"), "1.0.99");
+    }
+
+    #[test]
+    fn bump_version_overflow_to_minor() {
+        assert_eq!(bump_version("1.0.99"), "1.1.0");
+        assert_eq!(bump_version("1.1.99"), "1.2.0");
+    }
+
+    #[test]
+    fn bump_version_overflow_to_major() {
+        assert_eq!(bump_version("1.99.99"), "2.0.0");
+        assert_eq!(bump_version("0.99.99"), "1.0.0");
+    }
+
+    #[test]
+    fn bump_version_with_v_prefix_or_short() {
+        assert_eq!(bump_version("v1.0.0"), "1.0.1");
+        assert_eq!(bump_version("V1.0.0"), "1.0.1");
+        assert_eq!(bump_version("1.0"), "1.0.1");
+        assert_eq!(bump_version("invalid"), "1.0.1");
+    }
+
+    // ── ensure_skill_frontmatter_metadata ──
+
+    #[test]
+    fn ensure_skill_frontmatter_fills_missing() {
+        let tmp = tempdir().unwrap();
+        let skill_dir = tmp.path().join("test-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: test-skill\ndescription: A test\n---\n\n# Body\n",
+        )
+        .unwrap();
+
+        ensure_skill_frontmatter_metadata(&skill_dir).unwrap();
+
+        let meta = parse_skill_md(&skill_dir);
+        assert_eq!(meta.version.as_deref(), Some("1.0.0"));
+        assert!(meta.updated_at.is_some());
+    }
+
+    #[test]
+    fn ensure_skill_frontmatter_preserves_existing() {
+        let tmp = tempdir().unwrap();
+        let skill_dir = tmp.path().join("test-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: test-skill\nversion: 2.3.4\nupdated_at: '2026-01-01 00:00:00'\n---\n\n# Body\n",
+        )
+        .unwrap();
+
+        ensure_skill_frontmatter_metadata(&skill_dir).unwrap();
+
+        let meta = parse_skill_md(&skill_dir);
+        assert_eq!(meta.version.as_deref(), Some("2.3.4"));
+        assert_eq!(meta.updated_at.as_deref(), Some("2026-01-01 00:00:00"));
     }
 }

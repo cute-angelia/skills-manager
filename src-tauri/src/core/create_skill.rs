@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::fs;
 
 use super::{
-    central_repo, content_hash,
+    central_repo, content_hash, skill_metadata,
     skill_store::{SkillRecord, SkillStore},
     sync_metadata,
 };
@@ -74,8 +74,16 @@ pub fn create_skill_unlocked(
         struct Frontmatter<'a> {
             name: &'a str,
             description: &'a str,
+            version: &'a str,
+            updated_at: &'a str,
         }
-        let yaml = serde_yaml::to_string(&Frontmatter { name, description })?;
+        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let yaml = serde_yaml::to_string(&Frontmatter {
+            name,
+            description,
+            version: "1.0.0",
+            updated_at: &now_str,
+        })?;
         fs::write(dir.join("SKILL.md"), format!("---\n{yaml}---\n\n{body}\n"))?;
         let now = chrono::Utc::now().timestamp_millis();
         let record = SkillRecord {
@@ -161,6 +169,7 @@ pub fn edit_skill_unlocked(
     new_name: Option<&str>,
     description: &str,
     body: &str,
+    version: Option<&str>,
 ) -> Result<CreatedSkill> {
     let skill = store
         .get_skill_by_id(skill_id)?
@@ -190,6 +199,17 @@ pub fn edit_skill_unlocked(
 
     let name_changed = target_name != skill.name;
     let old_dir = std::path::PathBuf::from(&skill.central_path);
+    let existing_meta = skill_metadata::parse_skill_md(&old_dir);
+
+    let target_version = match version {
+        Some(v) if !v.trim().is_empty() => v.trim().to_string(),
+        _ => {
+            let current_ver = existing_meta.version.as_deref().unwrap_or("1.0.0");
+            skill_metadata::bump_version(current_ver)
+        }
+    };
+    let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
     let new_dir = if name_changed {
         let reserved = matches!(target_name.as_str(), "con" | "prn" | "aux" | "nul")
             || (target_name.len() == 4
@@ -228,10 +248,14 @@ pub fn edit_skill_unlocked(
     struct Frontmatter<'a> {
         name: &'a str,
         description: &'a str,
+        version: &'a str,
+        updated_at: &'a str,
     }
     let yaml = serde_yaml::to_string(&Frontmatter {
         name: &target_name,
         description,
+        version: &target_version,
+        updated_at: &now_str,
     })?;
     fs::create_dir_all(&new_dir)?;
     fs::write(new_dir.join("SKILL.md"), format!("---\n{yaml}---\n\n{body}\n"))?;
@@ -465,6 +489,7 @@ mod tests {
             None,
             "New description",
             "# New body\n\n- Updated instruction",
+            None,
         )
         .unwrap();
 
@@ -473,11 +498,13 @@ mod tests {
         assert_eq!(skill.description.as_deref(), Some("New description"));
         let md = fs::read_to_string(central_repo::skills_dir().join("orig-skill/SKILL.md")).unwrap();
         assert!(md.contains("description: New description"));
+        assert!(md.contains("version: 1.0.1"));
+        assert!(md.contains("updated_at:"));
         assert!(md.contains("# New body"));
     }
 
     #[test]
-    fn edits_skill_name_renames_directory() {
+    fn edits_skill_name_renames_directory_and_accepts_custom_version() {
         let lib = Library::new();
         let created = create_skill_unlocked(
             &lib.store,
@@ -493,6 +520,7 @@ mod tests {
             Some("after-rename"),
             "Updated Desc",
             "# Updated Body",
+            Some("2.0.0"),
         )
         .unwrap();
 
@@ -501,5 +529,7 @@ mod tests {
         assert!(central_repo::skills_dir().join("after-rename").exists());
         let skill = lib.store.get_skill_by_id(&created.skill_id).unwrap().unwrap();
         assert_eq!(skill.name, "after-rename");
+        let md = fs::read_to_string(central_repo::skills_dir().join("after-rename/SKILL.md")).unwrap();
+        assert!(md.contains("version: 2.0.0"));
     }
 }

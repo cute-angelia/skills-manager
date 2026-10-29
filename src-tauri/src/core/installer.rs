@@ -169,6 +169,7 @@ pub fn install_skill_dir_to_destination(
                 .symlink_metadata()
                 .is_ok_and(|metadata| metadata.file_type().is_dir())
         {
+            let _ = skill_metadata::ensure_skill_frontmatter_metadata(destination);
             let hash = content_hash::hash_directory(destination)?;
             return Ok(InstallResult {
                 name: name.to_string(),
@@ -187,6 +188,7 @@ pub fn install_skill_dir_to_destination(
     }
 
     copy_skill_dir(source, destination)?;
+    let _ = skill_metadata::ensure_skill_frontmatter_metadata(destination);
 
     let hash = content_hash::hash_directory(destination)?;
 
